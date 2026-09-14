@@ -1,0 +1,5 @@
+# shellcheck shell=bash
+
+nixhooks_collect_precommit_files
+nixhooks_generated_hooks
+nixhooks_summary

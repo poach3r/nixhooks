@@ -1,0 +1,32 @@
+{lib}: let
+  hookCall = hook: let
+    args =
+      [
+        hook.name
+        hook.files
+        hook.exclude
+        (
+          if hook.pass_filenames
+          then "1"
+          else "0"
+        )
+        (
+          if hook.always_run
+          then "1"
+          else "0"
+        )
+        hook.entry
+      ]
+      ++ hook.args;
+  in "  run_hook ${lib.concatMapStringsSep " " lib.escapeShellArg args}";
+
+  genCalls = hooks: lib.concatMapStringsSep "\n" hookCall (lib.attrValues hooks);
+
+  hooksForStage = stage: hooks: lib.filterAttrs (_: h: builtins.elem stage h.stages) hooks;
+in {
+  # calls for a single stage
+  genStageCalls = stage: hooks: genCalls (hooksForStage stage hooks);
+
+  # calls for every enabled hook regardless of stage,
+  genAllCalls = genCalls;
+}
