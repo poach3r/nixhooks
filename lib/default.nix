@@ -3,6 +3,7 @@
 
   hookSpec = import ./hook-spec.nix {inherit lib;};
   scriptGen = import ./script-gen.nix {inherit lib;};
+  tangledGen = import ./tangled-gen.nix {inherit lib;};
 
   runtimeLib = builtins.readFile ./hooks-runtime.sh;
   driverPreCommit = builtins.readFile ./drivers/pre-commit.sh;
@@ -34,8 +35,13 @@
     };
 
   # hooks: attrset of name -> hook config, see lib/hook-spec.nix for fields.
-  mkHooks = {hooks}: let
+  # tangled: optional Tangled pipeline config, see lib/tangled-gen.nix for fields.
+  mkHooks = {
+    hooks,
+    tangled ? {},
+  }: let
     normalized = hookSpec.normalizeHooks hooks;
+    tangledCfg = tangledGen.normalizeTangled tangled;
 
     preCommitHook = mkStageScript "pre-commit-hook" driverPreCommit (
       scriptGen.genStageCalls "pre-commit" normalized
@@ -72,13 +78,44 @@
         install_one "pre-push" "${prePushHook}/bin/pre-push-hook"
       '';
     };
-  in {
-    pre-commit-hook = preCommitHook;
-    pre-push-hook = prePushHook;
-    run-hooks = runHooks;
-    install-hooks = installHooks;
-  };
+
+    tangledPipeline = pkgs.writeText "hooks.yml" ''
+      ${marker}
+      ${tangledGen.mkPipelineText tangled}
+    '';
+
+    genTangledPipeline = pkgs.writeShellApplication {
+      name = "gen-tangled-pipeline";
+      text = ''
+        if ! git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+          echo "gen-tangled-pipeline: not inside a git repository" >&2
+          exit 1
+        fi
+
+        dest="$git_root/.tangled/workflows/hooks.yml"
+        if [[ -e "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
+          echo "gen-tangled-pipeline: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
+          exit 1
+        fi
+
+        mkdir -p "$(dirname "$dest")"
+        install -m 0644 ${tangledPipeline} "$dest"
+        echo "gen-tangled-pipeline: wrote $dest"
+      '';
+    };
+  in
+    {
+      pre-commit-hook = preCommitHook;
+      pre-push-hook = prePushHook;
+      run-hooks = runHooks;
+      install-hooks = installHooks;
+    }
+    // lib.optionalAttrs tangledCfg.enable {
+      tangled-pipeline = tangledPipeline;
+      gen-tangled-pipeline = genTangledPipeline;
+    };
 in {
   inherit mkHooks;
   inherit (hookSpec) normalizeHooks normalizeHook defaultHook;
+  inherit (tangledGen) normalizeTangled defaultTangled;
 }

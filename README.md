@@ -83,6 +83,36 @@ hooks.<name> = {
 
 `<name>` must match `[A-Za-z0-9_.-]+`
 
+## Tangled pipelines
+`mkHooks` can also generate a [Tangled](https://tangled.org) Spindle pipeline:
+
+```nix
+nixhooks.mkHooks {
+  hooks = { /* ... */ };
+  tangled = {
+    enable = true;
+    attr = "run-hooks";
+    flake = true;
+    engine = "microvm";
+    when = [
+      {
+        event = ["push" "pull_request"];
+        branch = ["main"];
+      }
+    ];
+  };
+}
+```
+
+```console
+$ nix-build -A gen-tangled-pipeline && ./result/bin/gen-tangled-pipeline
+gen-tangled-pipeline: wrote .tangled/workflows/hooks.yml
+```
+
+This writes a `.tangled/workflows/hooks.yml` in the same manner as 
+`install-hooks` which you commit to the repo. Note that this isn't wired into 
+`shellHook` like `install-hooks`, so you'll need to trigger it manually.
+
 # Benchmarks
 ## Evaluation 
 | | nixhooks | git-hooks.nix | ratio |
