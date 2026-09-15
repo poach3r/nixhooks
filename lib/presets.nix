@@ -73,6 +73,12 @@
     serial = false;
   };
 
+  selene = {
+    entry = "${pkgs.selene}/bin/selene";
+    files = "\\.lua$";
+    serial = false;
+  };
+
   taplo = {
     entry = "${pkgs.taplo}/bin/taplo";
     args = ["fmt" "--check"];
