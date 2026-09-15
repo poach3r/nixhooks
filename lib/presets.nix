@@ -93,6 +93,13 @@
     serial = false;
   };
 
+  yamlfmt = {
+    entry = "${pkgs.yamlfmt}/bin/yamlfmt";
+    args = ["-lint"];
+    files = "\\.ya?ml$";
+    serial = false;
+  };
+
   yamllint = {
     entry = "${pkgs.yamllint}/bin/yamllint";
     files = "\\.ya?ml$";
