@@ -1,5 +1,5 @@
 {lib}: let
-  hookCall = hook: let
+  mkArgs = hook: let
     args =
       [
         hook.name
@@ -19,16 +19,35 @@
         (lib.makeBinPath hook.path)
       ]
       ++ hook.args;
-  in "  run_hook ${lib.concatMapStringsSep " " lib.escapeShellArg args}";
+  in
+    args;
 
-  genCalls = hooks: lib.concatMapStringsSep "\n" hookCall (lib.attrValues hooks);
+  # serial calls are guarded with `|| true`, an ungaurded call would abort the
+  # script on the first failure
+  serialCall = hook: "  run_hook ${lib.concatMapStringsSep " " lib.escapeShellArg (mkArgs hook)} || true";
+
+  # run_hook_parallel never fails, so there's nothing to guard
+  parallelCall = hook: "  run_hook_parallel ${lib.concatMapStringsSep " " lib.escapeShellArg (mkArgs hook)}";
+
+  # partitions an already-stage-filtered hook set into a parallel batch
+  # followed by a nixhooks_wait_parallel barrier and then the serial tail
+  genPartitionedCalls = hooks: let
+    ordered = lib.attrValues hooks;
+    parallelHooks = builtins.filter (h: h.parallel) ordered;
+    serialHooks = builtins.filter (h: !h.parallel) ordered;
+    lines =
+      map parallelCall parallelHooks
+      ++ lib.optional (parallelHooks != []) "  nixhooks_wait_parallel"
+      ++ map serialCall serialHooks;
+  in
+    lib.concatStringsSep "\n" lines;
 
   hooksForStage = stage: hooks: lib.filterAttrs (_: h: builtins.elem stage h.stages) hooks;
 in {
   # calls for a single stage
-  genStageCalls = stage: hooks: genCalls (hooksForStage stage hooks);
+  genStageCalls = stage: hooks: genPartitionedCalls (hooksForStage stage hooks);
 
   # calls for CI, commit-msg hooks are filtered out
   genAllCalls = hooks:
-    genCalls (lib.filterAttrs (_: h: builtins.any (s: s != "commit-msg") h.stages) hooks);
+    genPartitionedCalls (lib.filterAttrs (_: h: builtins.any (s: s != "commit-msg") h.stages) hooks);
 }

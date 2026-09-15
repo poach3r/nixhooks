@@ -35,131 +35,134 @@
       ${driver}
     '';
 
-  # hooks: attrset of name -> hook config, see lib/hook-spec.nix for fields.
-  # tangled: optional Tangled pipeline config, see lib/tangled-gen.nix for fields.
-  # githubActions: optional GitHub Actions workflow config, see lib/github-actions-gen.nix for fields.
   mkHooks = {
-    hooks,
-    tangled ? {},
-    githubActions ? {},
-  }: let
-    normalized = hookSpec.normalizeHooks hooks;
-    tangledCfg = tangledGen.normalizeTangled tangled;
-    githubActionsCfg = githubActionsGen.normalizeGithubActions githubActions;
+    hooks, # attrset of name -> hook config, see lib/hook-spec.nix for fields.
+    tangled ? {}, # optional Tangled pipeline config, see lib/tangled-gen.nix for fields.
+    githubActions ? {}, # optional GitHub Actions workflow config, see lib/github-actions-gen.nix for fields.
+    parallel ? false, # optionally determines if hooks are ran in parallel
+  }:
+    assert lib.assertMsg (builtins.isBool parallel) "nixhooks: parallel must be a bool"; let
+      normalized = hookSpec.normalizeHooks hooks;
+      # resolve the top-level switch + per-hook escape hatch into one
+      # effective flag before codegen so lib/script-gen.nix only ever
+      # reads an already-decided hook.parallel
+      scheduled = lib.mapAttrs (_: h: h // {parallel = parallel && !h.serial;}) normalized;
+      tangledCfg = tangledGen.normalizeTangled tangled;
+      githubActionsCfg = githubActionsGen.normalizeGithubActions githubActions;
 
-    preCommitHook = mkStageScript "pre-commit-hook" driverPreCommit (
-      scriptGen.genStageCalls "pre-commit" normalized
-    );
-    prePushHook = mkStageScript "pre-push-hook" driverPrePush (
-      scriptGen.genStageCalls "pre-push" normalized
-    );
-    commitMsgHook = mkStageScript "commit-msg-hook" driverCommitMsg (
-      scriptGen.genStageCalls "commit-msg" normalized
-    );
-    runHooks = mkStageScript "run-hooks" driverRunHooks (scriptGen.genAllCalls normalized);
+      preCommitHook = mkStageScript "pre-commit-hook" driverPreCommit (
+        scriptGen.genStageCalls "pre-commit" scheduled
+      );
+      prePushHook = mkStageScript "pre-push-hook" driverPrePush (
+        scriptGen.genStageCalls "pre-push" scheduled
+      );
+      commitMsgHook = mkStageScript "commit-msg-hook" driverCommitMsg (
+        scriptGen.genStageCalls "commit-msg" scheduled
+      );
+      runHooks = mkStageScript "run-hooks" driverRunHooks (scriptGen.genAllCalls scheduled);
 
-    installHooks = pkgs.writeShellScriptBin "install-hooks" ''
-      set -euo pipefail
+      installHooks = pkgs.writeShellScriptBin "install-hooks" ''
+        set -euo pipefail
 
-      if ! git_dir=$(git rev-parse --git-dir 2>/dev/null); then
-        echo "install-hooks: not inside a git repository" >&2
-        exit 1
-      fi
-
-      install_one() {
-        local stage="$1" src="$2"
-        local dest="$git_dir/hooks/$stage"
-        if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
-          return 0
-        fi
-        if [[ -e "$dest" && ! -L "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
-          echo "install-hooks: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
+        if ! git_dir=$(git rev-parse --git-dir 2>/dev/null); then
+          echo "install-hooks: not inside a git repository" >&2
           exit 1
         fi
-        mkdir -p "$git_dir/hooks"
-        ln -sf "$src" "$dest"
-        echo "install-hooks: installed $stage -> $src"
-      }
 
-      install_one "pre-commit" "${preCommitHook}/bin/pre-commit-hook"
-      install_one "pre-push" "${prePushHook}/bin/pre-push-hook"
-      install_one "commit-msg" "${commitMsgHook}/bin/commit-msg-hook"
-    '';
+        install_one() {
+          local stage="$1" src="$2"
+          local dest="$git_dir/hooks/$stage"
+          if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+            return 0
+          fi
+          if [[ -e "$dest" && ! -L "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
+            echo "install-hooks: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
+            exit 1
+          fi
+          mkdir -p "$git_dir/hooks"
+          ln -sf "$src" "$dest"
+          echo "install-hooks: installed $stage -> $src"
+        }
 
-    tangledPipeline = pkgs.writeText "hooks.yml" ''
-      ${marker}
-      ${tangledGen.mkPipelineText tangled}
-    '';
+        install_one "pre-commit" "${preCommitHook}/bin/pre-commit-hook"
+        install_one "pre-push" "${prePushHook}/bin/pre-push-hook"
+        install_one "commit-msg" "${commitMsgHook}/bin/commit-msg-hook"
+      '';
 
-    genTangledPipeline = pkgs.writeShellScriptBin "gen-tangled-pipeline" ''
-      set -euo pipefail
+      tangledPipeline = pkgs.writeText "hooks.yml" ''
+        ${marker}
+        ${tangledGen.mkPipelineText tangled}
+      '';
 
-      if ! git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
-        echo "gen-tangled-pipeline: not inside a git repository" >&2
-        exit 1
-      fi
+      genTangledPipeline = pkgs.writeShellScriptBin "gen-tangled-pipeline" ''
+        set -euo pipefail
 
-      dest="$git_root/.tangled/workflows/hooks.yml"
-      if [[ -e "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
-        echo "gen-tangled-pipeline: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
-        exit 1
-      fi
+        if ! git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+          echo "gen-tangled-pipeline: not inside a git repository" >&2
+          exit 1
+        fi
 
-      mkdir -p "$(dirname "$dest")"
-      install -m 0644 ${tangledPipeline} "$dest"
-      echo "gen-tangled-pipeline: wrote $dest"
-    '';
-    githubActionsWorkflow = pkgs.writeText "hooks.yml" ''
-      ${marker}
-      ${githubActionsGen.mkWorkflowText githubActions}
-    '';
+        dest="$git_root/.tangled/workflows/hooks.yml"
+        if [[ -e "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
+          echo "gen-tangled-pipeline: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
+          exit 1
+        fi
 
-    genGithubActionsWorkflow = pkgs.writeShellScriptBin "gen-github-actions-workflow" ''
-      set -euo pipefail
+        mkdir -p "$(dirname "$dest")"
+        install -m 0644 ${tangledPipeline} "$dest"
+        echo "gen-tangled-pipeline: wrote $dest"
+      '';
+      githubActionsWorkflow = pkgs.writeText "hooks.yml" ''
+        ${marker}
+        ${githubActionsGen.mkWorkflowText githubActions}
+      '';
 
-      if ! git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
-        echo "gen-github-actions-workflow: not inside a git repository" >&2
-        exit 1
-      fi
+      genGithubActionsWorkflow = pkgs.writeShellScriptBin "gen-github-actions-workflow" ''
+        set -euo pipefail
 
-      dest="$git_root/.github/workflows/hooks.yml"
-      if [[ -e "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
-        echo "gen-github-actions-workflow: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
-        exit 1
-      fi
+        if ! git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+          echo "gen-github-actions-workflow: not inside a git repository" >&2
+          exit 1
+        fi
 
-      mkdir -p "$(dirname "$dest")"
-      install -m 0644 ${githubActionsWorkflow} "$dest"
-      echo "gen-github-actions-workflow: wrote $dest"
-    '';
+        dest="$git_root/.github/workflows/hooks.yml"
+        if [[ -e "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
+          echo "gen-github-actions-workflow: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
+          exit 1
+        fi
 
-    hookOutputs =
-      {
-        pre-commit-hook = preCommitHook;
-        pre-push-hook = prePushHook;
-        commit-msg-hook = commitMsgHook;
-        run-hooks = runHooks;
-        install-hooks = installHooks;
-      }
-      // lib.optionalAttrs tangledCfg.enable {
-        tangled-pipeline = tangledPipeline;
-        gen-tangled-pipeline = genTangledPipeline;
-      }
-      // lib.optionalAttrs githubActionsCfg.enable {
-        github-actions-workflow = githubActionsWorkflow;
-        gen-github-actions-workflow = genGithubActionsWorkflow;
+        mkdir -p "$(dirname "$dest")"
+        install -m 0644 ${githubActionsWorkflow} "$dest"
+        echo "gen-github-actions-workflow: wrote $dest"
+      '';
+
+      hookOutputs =
+        {
+          pre-commit-hook = preCommitHook;
+          pre-push-hook = prePushHook;
+          commit-msg-hook = commitMsgHook;
+          run-hooks = runHooks;
+          install-hooks = installHooks;
+        }
+        // lib.optionalAttrs tangledCfg.enable {
+          tangled-pipeline = tangledPipeline;
+          gen-tangled-pipeline = genTangledPipeline;
+        }
+        // lib.optionalAttrs githubActionsCfg.enable {
+          github-actions-workflow = githubActionsWorkflow;
+          gen-github-actions-workflow = genGithubActionsWorkflow;
+        };
+    in
+      hookOutputs
+      // {
+        apps =
+          builtins.mapAttrs
+          (_: drv: {
+            type = "app";
+            program = lib.getExe drv;
+          })
+          (builtins.removeAttrs hookOutputs ["tangled-pipeline" "github-actions-workflow"]);
       };
-  in
-    hookOutputs
-    // {
-      apps =
-        builtins.mapAttrs
-        (_: drv: {
-          type = "app";
-          program = lib.getExe drv;
-        })
-        (builtins.removeAttrs hookOutputs ["tangled-pipeline" "github-actions-workflow"]);
-    };
 in {
   inherit mkHooks presets;
   inherit (hookSpec) normalizeHooks normalizeHook defaultHook;

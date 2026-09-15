@@ -4,6 +4,11 @@
 NIXHOOKS_FAILED=0
 NIXHOOKS_FILES=()
 
+NIXHOOKS_PARALLEL_PIDS=()
+NIXHOOKS_PARALLEL_NAMES=()
+NIXHOOKS_PARALLEL_LOGS=()
+NIXHOOKS_PARALLEL_JOB_DIR=""
+
 _nixhooks_skip_list() {
 	IFS=',' read -ra _nixhooks_skip <<<"${SKIP:-}"
 }
@@ -56,7 +61,41 @@ run_hook() {
 	if ! PATH="$run_path" "${cmd[@]}"; then
 		echo "nixhooks: FAIL  $name"
 		NIXHOOKS_FAILED=1
+		return 1
 	fi
+	return 0
+}
+
+# Args: same as run_hook.
+run_hook_parallel() {
+	local name="$1"
+	if [[ -z "$NIXHOOKS_PARALLEL_JOB_DIR" ]]; then
+		NIXHOOKS_PARALLEL_JOB_DIR="$(mktemp -d)"
+	fi
+	local logfile="$NIXHOOKS_PARALLEL_JOB_DIR/$name.log"
+	run_hook "$@" >"$logfile" 2>&1 &
+	NIXHOOKS_PARALLEL_PIDS+=("$!")
+	NIXHOOKS_PARALLEL_NAMES+=("$name")
+	NIXHOOKS_PARALLEL_LOGS+=("$logfile")
+}
+
+# Waits for every job launched via run_hook_parallel flushing each one's
+# buffered output once it finishes and folding a nonzero exit into
+# NIXHOOKS_FAILED. Always exits 0.
+nixhooks_wait_parallel() {
+	local i st
+	for i in "${!NIXHOOKS_PARALLEL_PIDS[@]}"; do
+		st=0
+		wait "${NIXHOOKS_PARALLEL_PIDS[$i]}" || st=$?
+		cat "${NIXHOOKS_PARALLEL_LOGS[$i]}"
+		rm -f "${NIXHOOKS_PARALLEL_LOGS[$i]}"
+		[[ "$st" -ne 0 ]] && NIXHOOKS_FAILED=1
+	done
+	NIXHOOKS_PARALLEL_PIDS=()
+	NIXHOOKS_PARALLEL_NAMES=()
+	NIXHOOKS_PARALLEL_LOGS=()
+	[[ -n "$NIXHOOKS_PARALLEL_JOB_DIR" ]] && rmdir "$NIXHOOKS_PARALLEL_JOB_DIR" 2>/dev/null
+	NIXHOOKS_PARALLEL_JOB_DIR=""
 }
 
 nixhooks_summary() {

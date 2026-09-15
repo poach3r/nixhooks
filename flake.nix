@@ -19,6 +19,7 @@
       pkgs = import npinsSources.nixpkgs {inherit system;};
       nixhooksLib = import ./default.nix {inherit pkgs;};
       hooks = nixhooksLib.mkHooks {
+        parallel = true;
         hooks = {
           inherit (nixhooksLib.presets) commitlint;
           shellcheck = nixhooksLib.presets.shellcheck // {stages = ["pre-push"];};

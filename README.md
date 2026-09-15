@@ -78,6 +78,7 @@ hooks.<name> = {
   pass_filenames = true;             # append matched files as trailing args
   always_run = false;                # run once with no file filtering/passing 
   path = [ ];                        # packages whose bin/ dirs are prepended to PATH for entry
+  serial = true;                     # if false this hook will be run in parallel; see "Parallel execution" below
 };
 ```
 
@@ -106,6 +107,27 @@ nixhooks.mkHooks {
 ```
 
 See [lib/presets.nix](./lib/presets.nix) for the full list of presets.
+
+## Parallel execution
+By default every hook runs sequentially. Passing `parallel = true` to `mkHooks` 
+enables a two-phase model where every hook not marked `serial` runs 
+concurrently, then the remaining hooks run sequentially. Note that parallelism
+can actually *decrease* your hook execution speed if its already fast. Only use
+it when needed.
+
+```nix
+nixhooks.mkHooks {
+  parallel = true;
+  hooks = {inherit (nixhooksLib.presets) shellcheck alejandra statix;};
+}
+```
+
+Output from the concurrent batch is buffered per hook and flushed once the
+entire batch finishes in the declared order. 
+
+Only mark a hook `serial = false` if it doesn't mutate the files it's
+matched against, or if it's provably safe to race against every other
+`serial = false` hook in the same stage. 
 
 ## CI/CD
 nixhooks can also autogenerate CI workflows based on your selected hooks.

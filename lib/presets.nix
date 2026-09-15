@@ -2,12 +2,14 @@
   shellcheck = {
     entry = "${pkgs.shellcheck}/bin/shellcheck";
     files = "\\.sh$";
+    serial = false;
   };
 
   alejandra = {
     entry = "${pkgs.alejandra}/bin/alejandra";
     args = ["--check"];
     files = "\\.nix$";
+    serial = false;
   };
 
   statix = {
@@ -16,72 +18,85 @@
     files = "\\.nix$";
     pass_filenames = false;
     always_run = true;
+    serial = false;
   };
 
   deadnix = {
     entry = "${pkgs.deadnix}/bin/deadnix";
     args = ["--fail"];
     files = "\\.nix$";
+    serial = false;
   };
 
   typos = {
     entry = "${pkgs.typos}/bin/typos";
+    serial = false;
   };
 
   betterleaks = {
     entry = "${pkgs.betterleaks}/bin/betterleaks";
     args = ["dir" "--no-banner" "--no-color"];
+    serial = false;
   };
 
   harper = {
     entry = "${pkgs.harper}/bin/harper-cli";
     args = ["lint" "--no-color"];
     files = "\\.(md|txt)$";
+    serial = false;
   };
 
   commitlint = {
     entry = "${pkgs.commitlint}/bin/commitlint";
     args = ["--edit"];
     stages = ["commit-msg"];
+    serial = false;
   };
 
   shfmt = {
     entry = "${pkgs.shfmt}/bin/shfmt";
     args = ["-d"];
     files = "\\.sh$";
+    serial = false;
   };
 
   bats = {
     entry = "${pkgs.bats}/bin/bats";
     files = "\\.bats$";
+    serial = false;
   };
 
   taplo = {
     entry = "${pkgs.taplo}/bin/taplo";
     args = ["fmt" "--check"];
     files = "\\.toml$";
+    serial = false;
   };
 
   yamllint = {
     entry = "${pkgs.yamllint}/bin/yamllint";
     files = "\\.ya?ml$";
+    serial = false;
   };
 
   prettier = {
     entry = "${pkgs.prettier}/bin/prettier";
     args = ["--check"];
     files = "\\.(html|css|scss|less|js|jsx|ts|tsx)$";
+    serial = false;
   };
 
   eslint = {
     entry = "${pkgs.eslint}/bin/eslint";
     files = "\\.(js|jsx|ts|tsx)$";
+    serial = false;
   };
 
   rustfmt = {
     entry = "${pkgs.rustfmt}/bin/rustfmt";
     args = ["--check"];
     files = "\\.rs$";
+    serial = false;
   };
 
   clippy = {
@@ -92,6 +107,7 @@
     files = "\\.rs$";
     pass_filenames = false;
     always_run = true;
+    serial = false;
   };
 
   gofmt = let
@@ -105,6 +121,7 @@
   in {
     entry = "${check}/bin/gofmt-check";
     files = "\\.go$";
+    serial = false;
   };
 
   govet = {
@@ -113,11 +130,13 @@
     files = "\\.go$";
     pass_filenames = false;
     always_run = true;
+    serial = false;
   };
 
   zigfmt = {
     entry = "${pkgs.zig}/bin/zig";
     args = ["fmt" "--check"];
     files = "\\.zig$";
+    serial = false;
   };
 }

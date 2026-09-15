@@ -108,7 +108,7 @@ EOF
 
   NIXHOOKS_FAILED=0
   NIXHOOKS_FILES=()
-  run_hook myhook '.*' '^$' 1 1 "$checker" ''
+  run_hook myhook '.*' '^$' 1 1 "$checker" '' || true
   [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
 
@@ -124,7 +124,7 @@ EOF
 @test "run_hook sets NIXHOOKS_FAILED when the entry fails, without aborting" {
   NIXHOOKS_FAILED=0
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 1 0 false ''
+  run_hook myhook '\.sh$' '^$' 1 0 false '' || true
   [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
 
@@ -133,6 +133,121 @@ EOF
   NIXHOOKS_FILES=("a.sh")
   run_hook myhook '\.sh$' '^$' 1 0 true ''
   [ "$NIXHOOKS_FAILED" -eq 0 ]
+}
+
+# run_hook: own exit status 
+
+@test "run_hook itself returns nonzero when the entry fails" {
+  NIXHOOKS_FILES=("a.sh")
+  run run_hook myhook '\.sh$' '^$' 1 0 false ''
+  [ "$status" -eq 1 ]
+}
+
+@test "run_hook itself returns zero when the entry succeeds" {
+  NIXHOOKS_FILES=("a.sh")
+  run run_hook myhook '\.sh$' '^$' 1 0 true ''
+  [ "$status" -eq 0 ]
+}
+
+# run_hook_parallel / nixhooks_wait_parallel 
+#
+# NOTE: none of these wrap run_hook_parallel or nixhooks_wait_parallel in
+# bats' `run` (or `$(...)`) helper -- both fork a subshell, and a subshell
+# cannot `wait` on a background job that was started by its parent, since
+# process parentage doesn't follow the fork. Output is captured via plain
+# redirection instead, which doesn't fork.
+
+@test "run_hook_parallel + nixhooks_wait_parallel runs every job to completion" {
+  local recorder_b="$TEST_REPO/.recorder-b.sh"
+  local record_file_b="$TEST_REPO/.record-b"
+  cat >"$recorder_b" <<EOF
+#!/bin/sh
+printf '%s\n' "\$@" >"$record_file_b"
+EOF
+  chmod +x "$recorder_b"
+
+  NIXHOOKS_FILES=("a.sh")
+  run_hook_parallel jobA '\.sh$' '^$' 1 0 "$RECORDER" ''
+  run_hook_parallel jobB '\.sh$' '^$' 1 0 "$recorder_b" ''
+  nixhooks_wait_parallel
+
+  run cat "$RECORD_FILE"
+  [[ "$output" == *"a.sh"* ]]
+  run cat "$record_file_b"
+  [[ "$output" == *"a.sh"* ]]
+}
+
+@test "nixhooks_wait_parallel sets NIXHOOKS_FAILED when any job fails" {
+  NIXHOOKS_FAILED=0
+  NIXHOOKS_FILES=()
+  run_hook_parallel jobA '.*' '^$' 1 1 true ''
+  run_hook_parallel jobB '.*' '^$' 1 1 false ''
+  nixhooks_wait_parallel
+  [ "$NIXHOOKS_FAILED" -eq 1 ]
+}
+
+@test "nixhooks_wait_parallel does not clear a pre-existing NIXHOOKS_FAILED when every job succeeds" {
+  NIXHOOKS_FAILED=1
+  NIXHOOKS_FILES=()
+  run_hook_parallel jobA '.*' '^$' 1 1 true ''
+  nixhooks_wait_parallel
+  [ "$NIXHOOKS_FAILED" -eq 1 ]
+}
+
+@test "nixhooks_wait_parallel flushes output in launch order regardless of completion order" {
+  local slow="$TEST_REPO/.slow.sh"
+  cat >"$slow" <<'EOF'
+#!/bin/sh
+sleep 0.3
+echo SLOW
+EOF
+  chmod +x "$slow"
+
+  local fast="$TEST_REPO/.fast.sh"
+  cat >"$fast" <<'EOF'
+#!/bin/sh
+echo FAST
+EOF
+  chmod +x "$fast"
+
+  local wait_output="$TEST_REPO/.wait-output"
+  NIXHOOKS_FILES=()
+  run_hook_parallel slowjob '.*' '^$' 1 1 "$slow" ''
+  run_hook_parallel fastjob '.*' '^$' 1 1 "$fast" ''
+  nixhooks_wait_parallel >"$wait_output" 2>&1
+
+  run cat "$wait_output"
+  [[ "$output" == *SLOW*FAST* ]]
+}
+
+@test "run_hook_parallel honors the same files/exclude matching as run_hook" {
+  NIXHOOKS_FILES=("a.sh" "vendor/b.sh")
+  run_hook_parallel myhook '\.sh$' '^vendor/' 1 0 "$RECORDER" ''
+  nixhooks_wait_parallel
+  run cat "$RECORD_FILE"
+  [[ "$output" == *"a.sh"* ]]
+  [[ "$output" != *"vendor/b.sh"* ]]
+}
+
+# set -e / errexit interaction 
+#
+# The generated scripts run under `set -euo pipefail`. This is the property
+# lib/script-gen.nix's `|| true` guard on serial run_hook calls exists for:
+# a failing hook must not abort the rest of the script.
+
+@test "a failing hook does not abort a script running under set -euo pipefail" {
+  run bash -c '
+    set -euo pipefail
+    source "'"$NIXHOOKS_LIB"'/hooks-runtime.sh"
+    NIXHOOKS_FILES=("a.sh")
+    run_hook first "\.sh\$" "^\$" 1 0 false "" || true
+    run_hook second "\.sh\$" "^\$" 1 0 true "" || true
+    nixhooks_summary
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"nixhooks: FAIL  first"* ]]
+  [[ "$output" == *"nixhooks: run   second"* ]]
+  [[ "$output" == *"one or more hooks failed"* ]]
 }
 
 @test "nixhooks_summary exits 0 when nothing failed" {
