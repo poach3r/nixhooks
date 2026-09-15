@@ -28,6 +28,11 @@
     entry = "${pkgs.typos}/bin/typos";
   };
 
+  betterleaks = {
+    entry = "${pkgs.betterleaks}/bin/betterleaks";
+    args = ["dir" "--no-banner" "--no-color"];
+  };
+
   harper = {
     entry = "${pkgs.harper}/bin/harper-cli";
     args = ["lint" "--no-color"];
