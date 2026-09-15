@@ -140,7 +140,7 @@ This writes a `.tangled/workflows/hooks.yml` in the same manner as
 | nixhooks pre-commit hook | 39.0 ms ± 1.7 ms | 36.8 ms | 45.6 ms |
 | git-hooks.nix pre-commit hook | 432.5 ms ± 88.6 ms | 348.7 ms | 596.7 ms |
 
-## Store closure size (`nix path-info -S`)
+## Store closure size 
 | | Closure size |
 |---|---:|
 | nixhooks `install-hooks` | 83.6 MiB |
