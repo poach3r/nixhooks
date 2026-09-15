@@ -99,16 +99,27 @@
       install -m 0644 ${tangledPipeline} "$dest"
       echo "gen-tangled-pipeline: wrote $dest"
     '';
+    hookOutputs =
+      {
+        pre-commit-hook = preCommitHook;
+        pre-push-hook = prePushHook;
+        run-hooks = runHooks;
+        install-hooks = installHooks;
+      }
+      // lib.optionalAttrs tangledCfg.enable {
+        tangled-pipeline = tangledPipeline;
+        gen-tangled-pipeline = genTangledPipeline;
+      };
   in
-    {
-      pre-commit-hook = preCommitHook;
-      pre-push-hook = prePushHook;
-      run-hooks = runHooks;
-      install-hooks = installHooks;
-    }
-    // lib.optionalAttrs tangledCfg.enable {
-      tangled-pipeline = tangledPipeline;
-      gen-tangled-pipeline = genTangledPipeline;
+    hookOutputs
+    // {
+      apps =
+        builtins.mapAttrs
+        (_: drv: {
+          type = "app";
+          program = lib.getExe drv;
+        })
+        (builtins.removeAttrs hookOutputs ["tangled-pipeline"]);
     };
 in {
   inherit mkHooks;

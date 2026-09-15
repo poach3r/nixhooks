@@ -5,7 +5,6 @@ plain ol' Nix and Bash.
 
 ## Usage (non-flake)
 ```nix
-# default.nix in your project
 { pkgs ? import <nixpkgs> { } }:
 
 let
@@ -32,7 +31,7 @@ nixhooks.mkHooks {
 $ nix-build -A install-hooks && ./result/bin/install-hooks
 ```
 
-Or, wire it into a `shellHook` so hooks install automatically on entry (see [shell.nix](./shell.nix)).
+Or, wire it into a `shellHook` so hooks install automatically on entry (see the `devShells` output in [flake.nix](./flake.nix)).
 
 ## Usage (flake)
 ```nix
@@ -49,11 +48,7 @@ Or, wire it into a `shellHook` so hooks install automatically on entry (see [she
       };
     };
   in {
-    apps.x86_64-linux.install-hooks = {
-      type = "app";
-      program = "${hooks.install-hooks}/bin/install-hooks";
-    };
-
+    apps.x86_64-linux = hooks.apps; 
     devShells.x86_64-linux.default = pkgs.mkShell {
       shellHook = ''
         ${hooks.install-hooks}/bin/install-hooks

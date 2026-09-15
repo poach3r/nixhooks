@@ -35,7 +35,7 @@
   mkManifest = cfg: let
     buildCmd =
       if cfg.flake
-      then "nix build .#${cfg.attr} && ./result/bin/${cfg.attr}"
+      then "nix run .#${cfg.attr}"
       else "nix-build -A ${cfg.attr} && ./result/bin/${cfg.attr}";
   in
     {

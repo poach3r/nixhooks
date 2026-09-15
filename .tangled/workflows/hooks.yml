@@ -1,0 +1,2 @@
+# managed-by: nixhooks -- do not edit directly
+{"engine":"microvm","image":"nixos","steps":[{"command":"nix run .#run-hooks","name":"nixhooks: run-hooks"}],"when":[{"branch":["main"],"event":["push","pull_request"]}]}
