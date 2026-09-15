@@ -29,7 +29,7 @@
 
   engineFields = cfg:
     if cfg.engine == "microvm"
-    then {image = cfg.image;}
+    then {inherit (cfg) image;}
     else {};
 
   mkManifest = cfg: let
@@ -39,8 +39,7 @@
       else "nix-build -A ${cfg.attr} && ./result/bin/${cfg.attr}";
   in
     {
-      when = cfg.when;
-      engine = cfg.engine;
+      inherit (cfg) when engine;
     }
     // engineFields cfg
     // {

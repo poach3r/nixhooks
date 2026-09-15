@@ -95,13 +95,14 @@ filenames in `pre-commit`/`pre-push`.
 
 ## Presets
 `presets` is a small built-in catalog of common tool configs -- plain
-`hooks.<name>`-shaped attrsets you can reference directly or override:
+`hooks.<name>`-shaped attrsets you can reference directly, override with
+`//`, or call as a function to override any field:
 
 ```nix
 nixhooks.mkHooks {
   hooks = {
     shellcheck = nixhooksLib.presets.shellcheck;
-    alejandra = nixhooksLib.presets.alejandra // { stages = [ "pre-push" ]; };
+    alejandra = nixhooksLib.presets.alejandra { stages = [ "pre-push" ]; };
   };
 }
 ```

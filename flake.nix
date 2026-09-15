@@ -1,5 +1,5 @@
 {
-  outputs = {...}: let
+  outputs = _: let
     npinsSources = import ./npins;
     systems = [
       "x86_64-linux"
@@ -20,14 +20,19 @@
       nixhooksLib = import ./default.nix {inherit pkgs;};
       hooks = nixhooksLib.mkHooks {
         parallel = true;
-        hooks = {
-          inherit (nixhooksLib.presets) commitlint;
-          shellcheck = nixhooksLib.presets.shellcheck // {stages = ["pre-push"];};
-          alejandra = nixhooksLib.presets.alejandra // {stages = ["pre-push"];};
-          bats = nixhooksLib.presets.bats // {stages = ["pre-push"];};
-          shfmt = nixhooksLib.presets.shfmt // {stages = ["pre-push"];};
-          deadnix = nixhooksLib.presets.deadnix // {stages = ["pre-push"];};
-        };
+        hooks =
+          {inherit (nixhooksLib.presets) commitlint;}
+          // pkgs.lib.mapAttrs (_: h: h {stages = ["pre-push"];}) {
+            inherit
+              (nixhooksLib.presets)
+              shellcheck
+              alejandra
+              bats
+              shfmt
+              deadnix
+              statix
+              ;
+          };
 
         tangled = {
           enable = true;

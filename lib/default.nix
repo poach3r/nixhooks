@@ -1,5 +1,5 @@
 {pkgs}: let
-  lib = pkgs.lib;
+  inherit (pkgs) lib;
 
   hookSpec = import ./hook-spec.nix {inherit lib;};
   scriptGen = import ./script-gen.nix {inherit lib;};

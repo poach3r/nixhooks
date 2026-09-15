@@ -1,112 +1,116 @@
-{pkgs}: {
-  shellcheck = {
+{pkgs}: let
+  mkPreset = attrs: attrs // {__functor = self: args: self // args;};
+in {
+  shellcheck = mkPreset {
     entry = "${pkgs.shellcheck}/bin/shellcheck";
     files = "\\.sh$";
     serial = false;
   };
 
-  alejandra = {
+  alejandra = mkPreset {
     entry = "${pkgs.alejandra}/bin/alejandra";
     args = ["--check"];
     files = "\\.nix$";
     serial = false;
   };
 
-  statix = {
+  statix = mkPreset {
     entry = "${pkgs.statix}/bin/statix";
-    args = ["check"];
+    # statix scans the whole tree itself so nixhooks' own `exclude` field never
+    # applies here
+    args = ["check" "--ignore" "npins/**"];
     files = "\\.nix$";
     pass_filenames = false;
     always_run = true;
     serial = false;
   };
 
-  deadnix = {
+  deadnix = mkPreset {
     entry = "${pkgs.deadnix}/bin/deadnix";
     args = ["--fail"];
     files = "\\.nix$";
     serial = false;
   };
 
-  typos = {
+  typos = mkPreset {
     entry = "${pkgs.typos}/bin/typos";
     serial = false;
   };
 
-  betterleaks = {
+  betterleaks = mkPreset {
     entry = "${pkgs.betterleaks}/bin/betterleaks";
     args = ["dir" "--no-banner" "--no-color"];
     serial = false;
   };
 
-  harper = {
+  harper = mkPreset {
     entry = "${pkgs.harper}/bin/harper-cli";
     args = ["lint" "--no-color"];
     files = "\\.(md|txt)$";
     serial = false;
   };
 
-  commitlint = {
+  commitlint = mkPreset {
     entry = "${pkgs.commitlint}/bin/commitlint";
     args = ["--edit"];
     stages = ["commit-msg"];
     serial = false;
   };
 
-  shfmt = {
+  shfmt = mkPreset {
     entry = "${pkgs.shfmt}/bin/shfmt";
     args = ["-d"];
     files = "\\.sh$";
     serial = false;
   };
 
-  bats = {
+  bats = mkPreset {
     entry = "${pkgs.bats}/bin/bats";
     files = "\\.bats$";
     serial = false;
   };
 
-  stylua = {
+  stylua = mkPreset {
     entry = "${pkgs.stylua}/bin/stylua";
     args = ["--check"];
     files = "\\.lua$";
     serial = false;
   };
 
-  selene = {
+  selene = mkPreset {
     entry = "${pkgs.selene}/bin/selene";
     files = "\\.lua$";
     serial = false;
   };
 
-  taplo-fmt = {
+  taplo-fmt = mkPreset {
     entry = "${pkgs.taplo}/bin/taplo";
     args = ["fmt" "--check"];
     files = "\\.toml$";
     serial = false;
   };
 
-  taplo-lint = {
+  taplo-lint = mkPreset {
     entry = "${pkgs.taplo}/bin/taplo";
     args = ["lint"];
     files = "\\.toml$";
     serial = false;
   };
 
-  yamlfmt = {
+  yamlfmt = mkPreset {
     entry = "${pkgs.yamlfmt}/bin/yamlfmt";
     args = ["-lint"];
     files = "\\.ya?ml$";
     serial = false;
   };
 
-  yamllint = {
+  yamllint = mkPreset {
     entry = "${pkgs.yamllint}/bin/yamllint";
     files = "\\.ya?ml$";
     serial = false;
   };
 
-  xmllint-lint = {
+  xmllint-lint = mkPreset {
     entry = "${pkgs.libxml2}/bin/xmllint";
     args = ["--noout"];
     files = "\\.xml$";
@@ -131,33 +135,34 @@
         exit 1
       fi
     '';
-  in {
-    entry = "${check}/bin/xmllint-fmt-check";
-    files = "\\.xml$";
-    serial = false;
-  };
+  in
+    mkPreset {
+      entry = "${check}/bin/xmllint-fmt-check";
+      files = "\\.xml$";
+      serial = false;
+    };
 
-  prettier = {
+  prettier = mkPreset {
     entry = "${pkgs.prettier}/bin/prettier";
     args = ["--check"];
     files = "\\.(html|css|scss|less|js|jsx|ts|tsx|json)$";
     serial = false;
   };
 
-  eslint = {
+  eslint = mkPreset {
     entry = "${pkgs.eslint}/bin/eslint";
     files = "\\.(js|jsx|ts|tsx)$";
     serial = false;
   };
 
-  rustfmt = {
+  rustfmt = mkPreset {
     entry = "${pkgs.rustfmt}/bin/rustfmt";
     args = ["--check"];
     files = "\\.rs$";
     serial = false;
   };
 
-  clippy = {
+  clippy = mkPreset {
     # cargo dispatches `clippy` to `cargo-clippy` via PATH
     entry = "${pkgs.cargo}/bin/cargo";
     args = ["clippy" "--" "-D" "warnings"];
@@ -176,13 +181,14 @@
         exit 1
       fi
     '';
-  in {
-    entry = "${check}/bin/gofmt-check";
-    files = "\\.go$";
-    serial = false;
-  };
+  in
+    mkPreset {
+      entry = "${check}/bin/gofmt-check";
+      files = "\\.go$";
+      serial = false;
+    };
 
-  govet = {
+  govet = mkPreset {
     entry = "${pkgs.go}/bin/go";
     args = ["vet" "./..."];
     files = "\\.go$";
@@ -191,7 +197,7 @@
     serial = false;
   };
 
-  zigfmt = {
+  zigfmt = mkPreset {
     entry = "${pkgs.zig}/bin/zig";
     args = ["fmt" "--check"];
     files = "\\.zig$";
