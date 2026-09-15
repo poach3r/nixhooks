@@ -40,6 +40,11 @@
     files = "\\.sh$";
   };
 
+  bats = {
+    entry = "${pkgs.bats}/bin/bats";
+    files = "\\.bats$";
+  };
+
   taplo = {
     entry = "${pkgs.taplo}/bin/taplo";
     args = ["fmt" "--check"];

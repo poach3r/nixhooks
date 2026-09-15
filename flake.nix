@@ -22,6 +22,7 @@
         hooks = {
           shellcheck = nixhooksLib.presets.shellcheck // {stages = ["pre-push"];};
           alejandra = nixhooksLib.presets.alejandra // {stages = ["pre-push"];};
+          bats = nixhooksLib.presets.bats // {stages = ["pre-push"];};
           shfmt = nixhooksLib.presets.shfmt // {stages = ["pre-push"];};
           deadnix = nixhooksLib.presets.deadnix // {stages = ["pre-push"];};
         };
