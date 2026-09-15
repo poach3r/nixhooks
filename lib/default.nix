@@ -4,6 +4,7 @@
   hookSpec = import ./hook-spec.nix {inherit lib;};
   scriptGen = import ./script-gen.nix {inherit lib;};
   tangledGen = import ./tangled-gen.nix {inherit lib;};
+  githubActionsGen = import ./github-actions-gen.nix {inherit lib;};
   presets = import ./presets.nix {inherit pkgs;};
 
   runtimeLib = builtins.readFile ./hooks-runtime.sh;
@@ -35,12 +36,15 @@
 
   # hooks: attrset of name -> hook config, see lib/hook-spec.nix for fields.
   # tangled: optional Tangled pipeline config, see lib/tangled-gen.nix for fields.
+  # githubActions: optional GitHub Actions workflow config, see lib/github-actions-gen.nix for fields.
   mkHooks = {
     hooks,
     tangled ? {},
+    githubActions ? {},
   }: let
     normalized = hookSpec.normalizeHooks hooks;
     tangledCfg = tangledGen.normalizeTangled tangled;
+    githubActionsCfg = githubActionsGen.normalizeGithubActions githubActions;
 
     preCommitHook = mkStageScript "pre-commit-hook" driverPreCommit (
       scriptGen.genStageCalls "pre-commit" normalized
@@ -100,6 +104,30 @@
       install -m 0644 ${tangledPipeline} "$dest"
       echo "gen-tangled-pipeline: wrote $dest"
     '';
+    githubActionsWorkflow = pkgs.writeText "hooks.yml" ''
+      ${marker}
+      ${githubActionsGen.mkWorkflowText githubActions}
+    '';
+
+    genGithubActionsWorkflow = pkgs.writeShellScriptBin "gen-github-actions-workflow" ''
+      set -euo pipefail
+
+      if ! git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+        echo "gen-github-actions-workflow: not inside a git repository" >&2
+        exit 1
+      fi
+
+      dest="$git_root/.github/workflows/hooks.yml"
+      if [[ -e "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
+        echo "gen-github-actions-workflow: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
+        exit 1
+      fi
+
+      mkdir -p "$(dirname "$dest")"
+      install -m 0644 ${githubActionsWorkflow} "$dest"
+      echo "gen-github-actions-workflow: wrote $dest"
+    '';
+
     hookOutputs =
       {
         pre-commit-hook = preCommitHook;
@@ -110,6 +138,10 @@
       // lib.optionalAttrs tangledCfg.enable {
         tangled-pipeline = tangledPipeline;
         gen-tangled-pipeline = genTangledPipeline;
+      }
+      // lib.optionalAttrs githubActionsCfg.enable {
+        github-actions-workflow = githubActionsWorkflow;
+        gen-github-actions-workflow = genGithubActionsWorkflow;
       };
   in
     hookOutputs
@@ -120,10 +152,11 @@
           type = "app";
           program = lib.getExe drv;
         })
-        (builtins.removeAttrs hookOutputs ["tangled-pipeline"]);
+        (builtins.removeAttrs hookOutputs ["tangled-pipeline" "github-actions-workflow"]);
     };
 in {
   inherit mkHooks presets;
   inherit (hookSpec) normalizeHooks normalizeHook defaultHook;
   inherit (tangledGen) normalizeTangled defaultTangled;
+  inherit (githubActionsGen) normalizeGithubActions defaultGithubActions;
 }

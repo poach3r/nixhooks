@@ -98,8 +98,9 @@ nixhooks.mkHooks {
 
 See [lib/presets.nix](./lib/presets.nix) for the full list of presets.
 
-## Tangled pipelines
-`mkHooks` can also generate a [Tangled](https://tangled.org) Spindle pipeline:
+## CI/CD
+### Tangled pipelines
+`mkHooks` can generate a Tangled Spindle pipeline:
 
 ```nix
 nixhooks.mkHooks {
@@ -127,6 +128,34 @@ gen-tangled-pipeline: wrote .tangled/workflows/hooks.yml
 This writes a `.tangled/workflows/hooks.yml` in the same manner as 
 `install-hooks` which you commit to the repo. Note that this isn't wired into 
 `shellHook` like `install-hooks`, so you'll need to trigger it manually.
+
+### GitHub Actions
+`mkHooks` can generate a GitHub Actions workflow, the same way:
+
+```nix
+nixhooks.mkHooks {
+  hooks = { /* ... */ };
+  githubActions = {
+    enable = true;
+    attr = "run-hooks";
+    flake = true;
+    runsOn = "ubuntu-latest";
+    cache = true; # nix-community/cache-nix-action
+    on = {
+      push = { branches = [ "main" ]; };
+      pull_request = { branches = [ "main" ]; };
+    };
+  };
+}
+```
+
+```console
+$ nix-build -A gen-github-actions-workflow && ./result/bin/gen-github-actions-workflow
+gen-github-actions-workflow: wrote .github/workflows/hooks.yml
+```
+
+Note that I don't actively used GitHub. If you find any bugs then please open 
+an issue.
 
 # Benchmarks
 Measured against git-hooks.nix pinned to [`27555e2`](https://github.com/cachix/git-hooks.nix/commit/27555e2624241fb116b49095df4caaee85a25691)
