@@ -1,0 +1,54 @@
+name: Redirect to Tangled
+
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  redirect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment, close, and lock
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isPR = Boolean(context.payload.pull_request);
+            const number = isPR
+              ? context.payload.pull_request.number
+              : context.payload.issue.number;
+            const kind = isPR ? "PR" : "issue";
+            const tangledUrl = "https://tangled.org/poacher.dev/nixhooks";
+
+            const body = [
+              `Thanks for the ${isPR ? "contribution" : "report"}! Development happens on [Tangled](${tangledUrl}), not GitHub — this repo is a read-only mirror.`,
+              `Please open your ${kind} there instead: ${tangledUrl}`,
+              "",
+              `This ${kind} is being closed and locked automatically.`,
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+              body,
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+              state: "closed",
+            });
+
+            await github.rest.issues.lock({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: number,
+              lock_reason: "resolved",
+            });
