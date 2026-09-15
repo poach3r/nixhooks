@@ -1,5 +1,7 @@
 # shellcheck shell=bash
 
 nixhooks_collect_precommit_files
+nixhooks_enter_staged_worktree
 nixhooks_generated_hooks
+nixhooks_reconcile_worktree
 nixhooks_summary

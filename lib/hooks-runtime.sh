@@ -96,3 +96,73 @@ nixhooks_collect_prepush_files() {
     done < <(git diff --name-only -z "$remote_sha" "$local_sha")
   fi
 }
+
+# partial-staging isolation 
+# Hooks run against a throwaway worktree checked out from what's staged
+NIXHOOKS_WORKTREE_DIR=""
+NIXHOOKS_STAGED_TREE=""
+NIXHOOKS_REPO_ROOT=""
+
+nixhooks_worktree_cleanup() {
+  if [[ -n "$NIXHOOKS_WORKTREE_DIR" ]]; then
+    git worktree remove --force "$NIXHOOKS_WORKTREE_DIR" 2>/dev/null || rm -rf "$NIXHOOKS_WORKTREE_DIR"
+    NIXHOOKS_WORKTREE_DIR=""
+  fi
+}
+
+# Must run after nixhooks_collect_precommit_files (uses the real repo's index/HEAD). 
+nixhooks_enter_staged_worktree() {
+  NIXHOOKS_REPO_ROOT="$(pwd)"
+  NIXHOOKS_STAGED_TREE="$(git write-tree)"
+
+  local commit
+  if git rev-parse --verify -q HEAD >/dev/null; then
+    commit="$(git commit-tree "$NIXHOOKS_STAGED_TREE" -p HEAD -m "nixhooks: staged snapshot")"
+  else
+    commit="$(git commit-tree "$NIXHOOKS_STAGED_TREE" -m "nixhooks: staged snapshot")"
+  fi
+
+  # git invokes hooks with GIT_INDEX_FILE. Once we cd into the
+  # throwaway worktree below, that stale relative path would be misresolved 
+  # against the new cwd/gitdir, so we save and clear them here
+  NIXHOOKS_SAVED_GIT_INDEX_FILE="${GIT_INDEX_FILE-}"
+  NIXHOOKS_SAVED_GIT_DIR="${GIT_DIR-}"
+  NIXHOOKS_SAVED_GIT_WORK_TREE="${GIT_WORK_TREE-}"
+  unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE
+
+  NIXHOOKS_WORKTREE_DIR="$(mktemp -d)"
+  rmdir "$NIXHOOKS_WORKTREE_DIR" # git worktree add creates the dir itself
+  trap nixhooks_worktree_cleanup EXIT
+  git worktree add --quiet --detach "$NIXHOOKS_WORKTREE_DIR" "$commit"
+  cd "$NIXHOOKS_WORKTREE_DIR" || exit 1
+}
+
+# Re-stages anything a hook mutated inside the isolated worktree. If the real
+# working tree file was identical to what was staged beforehand also updates 
+# the real working tree file
+nixhooks_reconcile_worktree() {
+  cd "$NIXHOOKS_REPO_ROOT" || exit 1
+  [[ -n "$NIXHOOKS_SAVED_GIT_INDEX_FILE" ]] && export GIT_INDEX_FILE="$NIXHOOKS_SAVED_GIT_INDEX_FILE"
+  [[ -n "$NIXHOOKS_SAVED_GIT_DIR" ]] && export GIT_DIR="$NIXHOOKS_SAVED_GIT_DIR"
+  [[ -n "$NIXHOOKS_SAVED_GIT_WORK_TREE" ]] && export GIT_WORK_TREE="$NIXHOOKS_SAVED_GIT_WORK_TREE"
+
+  local f mode orig_blob new_hash real_blob
+  for f in "${NIXHOOKS_FILES[@]}"; do
+    orig_blob="$(git rev-parse "$NIXHOOKS_STAGED_TREE:$f" 2>/dev/null)" || continue
+    new_hash="$(git hash-object "$NIXHOOKS_WORKTREE_DIR/$f" 2>/dev/null)" || continue
+    [[ "$new_hash" == "$orig_blob" ]] && continue # hook didn't touch this file
+
+    new_hash="$(git hash-object -w "$NIXHOOKS_WORKTREE_DIR/$f")"
+    mode="$(git ls-tree "$NIXHOOKS_STAGED_TREE" -- "$f" | cut -d' ' -f1)"
+
+    real_blob="$(git hash-object "$f" 2>/dev/null || true)"
+    if [[ "$real_blob" == "$orig_blob" ]]; then
+      cp "$NIXHOOKS_WORKTREE_DIR/$f" "$f"
+    fi
+
+    git update-index --cacheinfo "$mode,$new_hash,$f"
+    echo "nixhooks: re-staged $f (modified by a hook)"
+  done
+
+  nixhooks_worktree_cleanup
+}

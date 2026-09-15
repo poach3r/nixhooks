@@ -83,17 +83,6 @@ hooks.<name> = {
 
 `<name>` must match `[A-Za-z0-9_.-]+`
 
-## Known v1 limitations
-- **Partial staging**: hooks run against the working tree, not a stash of just the staged
-  changes. A formatter hook may therefore also see/rewrite unstaged hunks in an otherwise
-  partially-staged file. 
-- **New-branch pre-push**: when pushing a new branch with no upstream, there's no meaningful
-  remote ref to diff against, so hooks run in whole-repo mode for that ref instead of a precise
-  diff.
-- **No built-in presets**: every hook's `entry` is BYO — there's no curated library of ~100
-  pre-wired linters like git-hooks.nix ships. This keeps the core small; a presets module can be
-  layered on top later without touching the engine.
-
 # Benchmarks
 ## Evaluation 
 | | nixhooks | git-hooks.nix | ratio |
