@@ -59,6 +59,13 @@ in {
     serial = false;
   };
 
+  commitizen = mkPreset {
+    entry = "${pkgs.commitizen}/bin/cz";
+    args = ["check" "--commit-msg-file"];
+    stages = ["commit-msg"];
+    serial = false;
+  };
+
   shfmt = mkPreset {
     entry = "${pkgs.shfmt}/bin/shfmt";
     args = ["-d"];
