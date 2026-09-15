@@ -106,6 +106,37 @@
     serial = false;
   };
 
+  xmllint-lint = {
+    entry = "${pkgs.libxml2}/bin/xmllint";
+    args = ["--noout"];
+    files = "\\.xml$";
+    serial = false;
+  };
+
+  xmllint-fmt = let
+    # xmllint --format always prepends an <?xml ...?> declaration to its
+    # output, even when the input has none
+    check = pkgs.writeShellScriptBin "xmllint-fmt-check" ''
+      unformatted=()
+      for f in "$@"; do
+        if ! diff -q \
+          <(sed '1{/^<?xml /d}' "$f") \
+          <(${pkgs.libxml2}/bin/xmllint --format "$f" | sed '1{/^<?xml /d}') \
+          >/dev/null; then
+          unformatted+=("$f")
+        fi
+      done
+      if [ "''${#unformatted[@]}" -gt 0 ]; then
+        printf '%s\n' "''${unformatted[@]}"
+        exit 1
+      fi
+    '';
+  in {
+    entry = "${check}/bin/xmllint-fmt-check";
+    files = "\\.xml$";
+    serial = false;
+  };
+
   prettier = {
     entry = "${pkgs.prettier}/bin/prettier";
     args = ["--check"];
