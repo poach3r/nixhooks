@@ -114,35 +114,40 @@ This writes a `.tangled/workflows/hooks.yml` in the same manner as
 `shellHook` like `install-hooks`, so you'll need to trigger it manually.
 
 # Benchmarks
+Measured against git-hooks.nix pinned to [`27555e2`](https://github.com/cachix/git-hooks.nix/commit/27555e2624241fb116b49095df4caaee85a25691)
+
 ## Evaluation 
 | | nixhooks | git-hooks.nix | ratio |
 |---|---:|---:|---:|
 | **shellcheck+nixfmt** | | | |
-| `nrFunctionCalls` | 433,654 | 847,527 | 1.95× |
-| `nrLookups` | 225,963 | 444,844 | 1.97× |
-| `nrThunks` | 977,026 | 1,680,913 | 1.72× |
-| `values.number` | 1,898,390 | 2,901,842 | 1.53× |
-| `cpuTime` (evaluator only) | 3.06 s | 4.18 s | 1.37× |
+| `nrFunctionCalls` | 418,967 | 899,340 | 2.15× |
+| `nrLookups` | 217,953 | 474,046 | 2.17× |
+| `nrThunks` | 948,777 | 2,075,768 | 2.19× |
+| `values.number` | 1,867,274 | 4,366,397 | 2.34× |
+| `cpuTime` | 0.499 s | 1.019 s | 2.04× |
 | **no hooks** | | | |
-| `nrFunctionCalls` | 301,187 | 651,274 | 2.16× |
-| `nrLookups` | 163,404 | 349,549 | 2.14× |
-| `nrThunks` | 789,079 | 1,402,928 | 1.78× |
+| `nrFunctionCalls` | 45,514 | 703,210 | 15.45× |
+| `nrLookups` | 26,666 | 378,436 | 14.19× |
+| `nrThunks` | 135,622 | 1,797,899 | 13.26× |
+| `values.number` | 585,871 | 4,066,662 | 6.94× |
+| `cpuTime` | 0.083 s | 0.911 s | 11.04× |
 
 ## Hook installation
 | Command | Mean | Min | Max |
 |---|---:|---:|---:|
-| nixhooks `-A install-hooks` | 4.195 s ± 0.556 s | 3.238 s | 5.052 s |
-| git-hooks.nix (default attr) | 5.028 s ± 0.499 s | 4.445 s | 6.404 s |
+| nixhooks `-A install-hooks` | 647.7 ms ± 54.5 ms | 594.1 ms | 763.4 ms |
+| git-hooks.nix (installationScript) | 1.263 s ± 0.030 s | 1.222 s | 1.321 s |
 
 ## Hook execution
 | Command | Mean | Min | Max |
 |---|---:|---:|---:|
-| nixhooks pre-commit hook | 39.0 ms ± 1.7 ms | 36.8 ms | 45.6 ms |
-| git-hooks.nix pre-commit hook | 432.5 ms ± 88.6 ms | 348.7 ms | 596.7 ms |
+| nixhooks pre-commit hook | 14.3 ms ± 1.4 ms | 12.8 ms | 23.4 ms |
+| git-hooks.nix pre-commit hook | 89.4 ms ± 2.0 ms | 87.0 ms | 94.8 ms |
 
 ## Store closure size 
 | | Closure size |
 |---|---:|
-| nixhooks `install-hooks` | 83.6 MiB |
-| git-hooks.nix workflow closure | 359.0 MiB |
+| nixhooks `install-hooks` | 83.65 MiB |
+| git-hooks.nix workflow closure | 359.03 MiB |
+
 
