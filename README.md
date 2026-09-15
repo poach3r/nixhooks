@@ -1,3 +1,7 @@
+> Development takes place on [Tangled](https://tangled.org/poacher.dev/nixhooks),
+  however, I do maintain a [GitHub mirror](https://github.com/poach3r/nixhooks). 
+  Please make issues and PRs to the Tangled repository.
+
 # nixhooks
 A small, fast, drop-in replacement for [git-hooks.nix](https://github.com/cachix/git-hooks.nix).
 No flake required, no `flake-parts`, no `systems`, no Python, no slop, just 
