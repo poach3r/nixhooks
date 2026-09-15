@@ -79,9 +79,16 @@
     serial = false;
   };
 
-  taplo = {
+  taplo-fmt = {
     entry = "${pkgs.taplo}/bin/taplo";
     args = ["fmt" "--check"];
+    files = "\\.toml$";
+    serial = false;
+  };
+
+  taplo-lint = {
+    entry = "${pkgs.taplo}/bin/taplo";
+    args = ["lint"];
     files = "\\.toml$";
     serial = false;
   };
