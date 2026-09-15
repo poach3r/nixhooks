@@ -36,7 +36,7 @@ Or, wire it into a `shellHook` so hooks install automatically on entry (see the 
 ## Usage (flake)
 ```nix
 {
-  inputs.nixhooks.url = "github:you/nixhooks";
+  inputs.nixhooks.url = "git+https://tangled.org/poacher.dev/nixhooks";
   outputs = { self, nixpkgs, nixhooks }: let
     pkgs = nixpkgs.legacyPackages.x86_64-linux;
     hooks = (nixhooks.lib { inherit pkgs; }).mkHooks {
