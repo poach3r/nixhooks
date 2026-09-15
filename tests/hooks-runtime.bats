@@ -34,7 +34,7 @@ teardown() {
 
 @test "run_hook passes only files matching 'files' to the entry" {
   NIXHOOKS_FILES=("a.sh" "b.txt")
-  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER"
+  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER" ''
   run cat "$RECORD_FILE"
   [[ "$output" == *"a.sh"* ]]
   [[ "$output" != *"b.txt"* ]]
@@ -42,7 +42,7 @@ teardown() {
 
 @test "run_hook excludes files matching 'exclude'" {
   NIXHOOKS_FILES=("a.sh" "vendor/b.sh")
-  run_hook myhook '\.sh$' '^vendor/' 1 0 "$RECORDER"
+  run_hook myhook '\.sh$' '^vendor/' 1 0 "$RECORDER" ''
   run cat "$RECORD_FILE"
   [[ "$output" == *"a.sh"* ]]
   [[ "$output" != *"vendor/b.sh"* ]]
@@ -50,13 +50,13 @@ teardown() {
 
 @test "run_hook does not invoke the entry when nothing matches" {
   NIXHOOKS_FILES=("a.txt")
-  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER"
+  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER" ''
   [ ! -e "$RECORD_FILE" ]
 }
 
 @test "run_hook with always_run=1 invokes the entry with no files matched" {
   NIXHOOKS_FILES=()
-  run_hook myhook '.*' '^$' 1 1 "$RECORDER"
+  run_hook myhook '.*' '^$' 1 1 "$RECORDER" ''
   [ -e "$RECORD_FILE" ]
   # $(...) strips the recorder's trailing newline, so this is empty iff no
   # arguments were passed (printf '%s\n' with zero args still emits one blank line).
@@ -65,9 +65,47 @@ teardown() {
 
 @test "run_hook with pass_filenames=0 invokes the entry without filenames" {
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 0 0 "$RECORDER"
+  run_hook myhook '\.sh$' '^$' 0 0 "$RECORDER" ''
   [ -e "$RECORD_FILE" ]
   [ -z "$(cat "$RECORD_FILE")" ]
+}
+
+# --- run_hook: path_prefix -------------------------------------------------
+
+@test "run_hook prepends path_prefix to PATH before invoking the entry" {
+  local extra_bin_dir="$TEST_REPO/extra_bin"
+  mkdir -p "$extra_bin_dir"
+  cat >"$extra_bin_dir/sibling-tool" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+  chmod +x "$extra_bin_dir/sibling-tool"
+
+  local checker="$TEST_REPO/checker.sh"
+  cat >"$checker" <<'EOF'
+#!/bin/sh
+command -v sibling-tool
+EOF
+  chmod +x "$checker"
+
+  NIXHOOKS_FILES=()
+  run run_hook myhook '.*' '^$' 1 1 "$checker" "$extra_bin_dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$extra_bin_dir/sibling-tool"* ]]
+}
+
+@test "run_hook does not touch PATH when path_prefix is empty" {
+  local checker="$TEST_REPO/checker.sh"
+  cat >"$checker" <<'EOF'
+#!/bin/sh
+command -v sibling-tool
+EOF
+  chmod +x "$checker"
+
+  NIXHOOKS_FAILED=0
+  NIXHOOKS_FILES=()
+  run_hook myhook '.*' '^$' 1 1 "$checker" ''
+  [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
 
 # --- run_hook: SKIP and failure aggregation -------------------------------
@@ -75,21 +113,21 @@ teardown() {
 @test "run_hook honors SKIP and never invokes the entry" {
   _nixhooks_skip=("myhook")
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER"
+  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER" ''
   [ ! -e "$RECORD_FILE" ]
 }
 
 @test "run_hook sets NIXHOOKS_FAILED when the entry fails, without aborting" {
   NIXHOOKS_FAILED=0
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 1 0 false
+  run_hook myhook '\.sh$' '^$' 1 0 false ''
   [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
 
 @test "run_hook leaves NIXHOOKS_FAILED untouched when the entry succeeds" {
   NIXHOOKS_FAILED=0
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 1 0 true
+  run_hook myhook '\.sh$' '^$' 1 0 true ''
   [ "$NIXHOOKS_FAILED" -eq 0 ]
 }
 

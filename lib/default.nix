@@ -4,6 +4,7 @@
   hookSpec = import ./hook-spec.nix {inherit lib;};
   scriptGen = import ./script-gen.nix {inherit lib;};
   tangledGen = import ./tangled-gen.nix {inherit lib;};
+  presets = import ./presets.nix {inherit pkgs;};
 
   runtimeLib = builtins.readFile ./hooks-runtime.sh;
   driverPreCommit = builtins.readFile ./drivers/pre-commit.sh;
@@ -122,7 +123,7 @@
         (builtins.removeAttrs hookOutputs ["tangled-pipeline"]);
     };
 in {
-  inherit mkHooks;
+  inherit mkHooks presets;
   inherit (hookSpec) normalizeHooks normalizeHook defaultHook;
   inherit (tangledGen) normalizeTangled defaultTangled;
 }

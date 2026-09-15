@@ -7,6 +7,7 @@
     stages = ["pre-commit"];
     pass_filenames = true;
     always_run = false;
+    path = []; # extra packages whose bin/ dirs are prepended to PATH for entry
   };
 
   validStages = [
@@ -29,7 +30,9 @@
       "nixhooks: hook '${name}' has invalid stage(s) in ${builtins.toJSON merged.stages}; valid stages are: ${builtins.concatStringsSep ", " validStages}";
       assert lib.assertMsg (
         merged.stages != []
-      ) "nixhooks: hook '${name}' must declare at least one stage"; merged;
+      ) "nixhooks: hook '${name}' must declare at least one stage";
+      assert lib.assertMsg (builtins.isList merged.path)
+      "nixhooks: hook '${name}' 'path' must be a list of packages"; merged;
 in {
   inherit defaultHook normalizeHook;
   normalizeHooks = hooks: lib.mapAttrs normalizeHook (lib.filterAttrs (_: h: h.enable or true) hooks);

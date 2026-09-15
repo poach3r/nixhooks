@@ -1,5 +1,5 @@
 # nixhooks
-A small, fast, drop-in replacement for [git-hooks.nix](https://github.com/cachix/git-hooks.nix)
+A small, fast, drop-in replacement for [git-hooks.nix](https://github.com/cachix/git-hooks.nix).
 No flake required, no `flake-parts`, no `systems`, no Python, no slop, just 
 plain ol' Nix and Bash.
 
@@ -73,10 +73,30 @@ hooks.<name> = {
   stages = [ "pre-commit" ];         # subset of [ "pre-commit" "pre-push" ]
   pass_filenames = true;             # append matched files as trailing args
   always_run = false;                # run once with no file filtering/passing 
+  path = [ ];                        # packages whose bin/ dirs are prepended to PATH for entry
 };
 ```
 
 `<name>` must match `[A-Za-z0-9_.-]+`
+
+`path` is for tools that internally dispatch to a sibling binary via `PATH`
+(e.g. `cargo` finding `cargo-clippy`) -- `entry` itself is always invoked by
+absolute path regardless of `path`.
+
+## Presets
+`presets` is a small built-in catalog of common tool configs -- plain
+`hooks.<name>`-shaped attrsets you can reference directly or override:
+
+```nix
+nixhooks.mkHooks {
+  hooks = {
+    shellcheck = nixhooksLib.presets.shellcheck;
+    alejandra = nixhooksLib.presets.alejandra // { stages = [ "pre-push" ]; };
+  };
+}
+```
+
+See [lib/presets.nix](./lib/presets.nix) for the full list of presets.
 
 ## Tangled pipelines
 `mkHooks` can also generate a [Tangled](https://tangled.org) Spindle pipeline:

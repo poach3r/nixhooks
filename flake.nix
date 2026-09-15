@@ -1,5 +1,5 @@
 {
-  outputs = {self}: let
+  outputs = {...}: let
     npinsSources = import ./npins;
     systems = [
       "x86_64-linux"
@@ -17,20 +17,13 @@
 
     perSystem = system: let
       pkgs = import npinsSources.nixpkgs {inherit system;};
-      hooks = (import ./default.nix {inherit pkgs;}).mkHooks {
+      nixhooksLib = import ./default.nix {inherit pkgs;};
+      hooks = nixhooksLib.mkHooks {
         hooks = {
-          shellcheck = {
-            entry = "${pkgs.shellcheck}/bin/shellcheck";
-            files = "\\.sh$";
-            stages = ["pre-push"];
-          };
-
-          alejandra-check = {
-            entry = "${pkgs.alejandra}/bin/alejandra";
-            args = ["--check"];
-            files = "\\.nix$";
-            stages = ["pre-push"];
-          };
+          shellcheck = nixhooksLib.presets.shellcheck // {stages = ["pre-push"];};
+          alejandra = nixhooksLib.presets.alejandra // {stages = ["pre-push"];};
+          shfmt = nixhooksLib.presets.shfmt // {stages = ["pre-push"];};
+          deadnix = nixhooksLib.presets.deadnix // {stages = ["pre-push"];};
         };
 
         tangled = {
@@ -57,7 +50,7 @@
     devShells =
       builtins.mapAttrs (_: d: {
         default = d.pkgs.mkShell {
-          packages = [d.pkgs.npins d.pkgs.alejandra d.pkgs.bats];
+          packages = [d.pkgs.shfmt d.pkgs.npins d.pkgs.alejandra d.pkgs.bats];
           shellHook = ''
             ${d.hooks.install-hooks}/bin/install-hooks
           '';

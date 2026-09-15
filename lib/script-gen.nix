@@ -16,6 +16,7 @@
           else "0"
         )
         hook.entry
+        (lib.makeBinPath hook.path)
       ]
       ++ hook.args;
   in "  run_hook ${lib.concatMapStringsSep " " lib.escapeShellArg args}";
