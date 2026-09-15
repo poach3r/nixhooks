@@ -1,8 +1,4 @@
-# Unit tests for lib/hooks-runtime.sh -- the hand-written, non-generated
-# bash that carries the actual git-protocol correctness (no-HEAD, zero-sha,
-# file matching). The Nix-generated glue (script-gen.nix, install-hooks) is
-# exercised by building the derivations instead; that's a much lower-risk
-# surface (string templating) and isn't duplicated here.
+# Unit tests for lib/hooks-runtime.sh 
 
 setup() {
   NIXHOOKS_LIB="${NIXHOOKS_LIB:-$BATS_TEST_DIRNAME/../lib}"
@@ -30,7 +26,7 @@ teardown() {
   rm -rf "$TEST_REPO"
 }
 
-# --- run_hook: file matching / exclude / always_run / pass_filenames ------
+# run_hook: file matching / exclude / always_run / pass_filenames ------
 
 @test "run_hook passes only files matching 'files' to the entry" {
   NIXHOOKS_FILES=("a.sh" "b.txt")
@@ -70,7 +66,15 @@ teardown() {
   [ -z "$(cat "$RECORD_FILE")" ]
 }
 
-# --- run_hook: path_prefix -------------------------------------------------
+@test "run_hook appends the collected commit-msg file as a trailing arg" {
+  NIXHOOKS_FILES=("/tmp/some/COMMIT_EDITMSG")
+  run_hook commitlint '.*' '^$' 1 0 "$RECORDER" '' --edit
+  run cat "$RECORD_FILE"
+  [[ "$output" == *"--edit"* ]]
+  [[ "$output" == *"/tmp/some/COMMIT_EDITMSG"* ]]
+}
+
+# run_hook: path_prefix 
 
 @test "run_hook prepends path_prefix to PATH before invoking the entry" {
   local extra_bin_dir="$TEST_REPO/extra_bin"
@@ -108,7 +112,7 @@ EOF
   [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
 
-# --- run_hook: SKIP and failure aggregation -------------------------------
+# run_hook: SKIP and failure aggregation 
 
 @test "run_hook honors SKIP and never invokes the entry" {
   _nixhooks_skip=("myhook")
@@ -143,7 +147,7 @@ EOF
   [ "$status" -eq 1 ]
 }
 
-# --- file discovery --------------------------------------------------------
+# file discovery 
 
 @test "precommit file collection works with no HEAD yet (initial commit)" {
   echo hi >a.txt
@@ -171,6 +175,14 @@ EOF
   git commit -q -m init
   nixhooks_collect_repo_files
   [ "${#NIXHOOKS_FILES[@]}" -eq 2 ]
+}
+
+@test "commitmsg file collection sets NIXHOOKS_FILES to the given message file path" {
+  local msg_file="$TEST_REPO/COMMIT_EDITMSG"
+  echo "feat: add thing" >"$msg_file"
+  nixhooks_collect_commitmsg_files "$msg_file"
+  [ "${#NIXHOOKS_FILES[@]}" -eq 1 ]
+  [ "${NIXHOOKS_FILES[0]}" = "$msg_file" ]
 }
 
 @test "prepush file collection falls back to the whole repo for a new branch (zero remote sha)" {

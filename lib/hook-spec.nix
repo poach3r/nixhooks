@@ -13,6 +13,7 @@
   validStages = [
     "pre-commit"
     "pre-push"
+    "commit-msg"
   ];
 
   # names are passed through as shell-escaped string arguments but must exclude ',' and whitespace/control characters

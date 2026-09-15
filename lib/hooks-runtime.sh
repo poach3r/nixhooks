@@ -87,6 +87,10 @@ nixhooks_collect_repo_files() {
 	done < <(git ls-files -z)
 }
 
+nixhooks_collect_commitmsg_files() {
+	NIXHOOKS_FILES=("$1")
+}
+
 nixhooks_collect_prepush_files() {
 	local remote_sha="$1" local_sha="$2"
 	NIXHOOKS_FILES=()

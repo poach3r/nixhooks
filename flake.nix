@@ -20,6 +20,7 @@
       nixhooksLib = import ./default.nix {inherit pkgs;};
       hooks = nixhooksLib.mkHooks {
         hooks = {
+          inherit (nixhooksLib.presets) commitlint;
           shellcheck = nixhooksLib.presets.shellcheck // {stages = ["pre-push"];};
           alejandra = nixhooksLib.presets.alejandra // {stages = ["pre-push"];};
           bats = nixhooksLib.presets.bats // {stages = ["pre-push"];};

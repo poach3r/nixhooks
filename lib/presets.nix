@@ -34,6 +34,12 @@
     files = "\\.(md|txt)$";
   };
 
+  commitlint = {
+    entry = "${pkgs.commitlint}/bin/commitlint";
+    args = ["--edit"];
+    stages = ["commit-msg"];
+  };
+
   shfmt = {
     entry = "${pkgs.shfmt}/bin/shfmt";
     args = ["-d"];

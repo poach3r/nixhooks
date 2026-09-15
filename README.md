@@ -70,7 +70,7 @@ hooks.<name> = {
   args = [ ];                        # extra args passed before matched filenames
   files = ".*";                      # ERE regex (bash [[ =~ ]]) tested against each candidate path
   exclude = "^$";                    # ERE regex; "^$" (default) excludes nothing
-  stages = [ "pre-commit" ];         # subset of [ "pre-commit" "pre-push" ]
+  stages = [ "pre-commit" ];         # subset of [ "pre-commit" "pre-push" "commit-msg" ]
   pass_filenames = true;             # append matched files as trailing args
   always_run = false;                # run once with no file filtering/passing 
   path = [ ];                        # packages whose bin/ dirs are prepended to PATH for entry
@@ -82,6 +82,11 @@ hooks.<name> = {
 `path` is for tools that internally dispatch to a sibling binary via `PATH`
 (e.g. `cargo` finding `cargo-clippy`) -- `entry` itself is always invoked by
 absolute path regardless of `path`.
+
+A `commit-msg`-staged hook receives the path to the temporary file
+containing the commit message as its sole file. `files`/`exclude`/
+`pass_filenames` apply to that single path the same way they apply to real
+filenames in `pre-commit`/`pre-push`.
 
 ## Presets
 `presets` is a small built-in catalog of common tool configs -- plain
@@ -99,9 +104,14 @@ nixhooks.mkHooks {
 See [lib/presets.nix](./lib/presets.nix) for the full list of presets.
 
 ## CI/CD
-### Tangled pipelines
-`mkHooks` can generate a Tangled Spindle pipeline:
+nixhooks can also autogenerate CI workflows based on your selected hooks.
 
+Hooks staged only for `commit-msg` (e.g. the `commitlint` preset) are
+excluded from the generated CI pipeline's `run-hooks` invocation as CI has
+no commit message to check. A hook declaring multiple stages including 
+`commit-msg` still runs in CI for its other stage(s).
+
+### Tangled pipelines
 ```nix
 nixhooks.mkHooks {
   hooks = { /* ... */ };
@@ -130,8 +140,6 @@ This writes a `.tangled/workflows/hooks.yml` in the same manner as
 `shellHook` like `install-hooks`, so you'll need to trigger it manually.
 
 ### GitHub Actions
-`mkHooks` can generate a GitHub Actions workflow, the same way:
-
 ```nix
 nixhooks.mkHooks {
   hooks = { /* ... */ };

@@ -10,6 +10,7 @@
   runtimeLib = builtins.readFile ./hooks-runtime.sh;
   driverPreCommit = builtins.readFile ./drivers/pre-commit.sh;
   driverPrePush = builtins.readFile ./drivers/pre-push.sh;
+  driverCommitMsg = builtins.readFile ./drivers/commit-msg.sh;
   driverRunHooks = builtins.readFile ./drivers/run-hooks.sh;
 
   # lets install-hooks tell a nixhooks-installed hook and other hooks apart
@@ -52,6 +53,9 @@
     prePushHook = mkStageScript "pre-push-hook" driverPrePush (
       scriptGen.genStageCalls "pre-push" normalized
     );
+    commitMsgHook = mkStageScript "commit-msg-hook" driverCommitMsg (
+      scriptGen.genStageCalls "commit-msg" normalized
+    );
     runHooks = mkStageScript "run-hooks" driverRunHooks (scriptGen.genAllCalls normalized);
 
     installHooks = pkgs.writeShellScriptBin "install-hooks" ''
@@ -79,6 +83,7 @@
 
       install_one "pre-commit" "${preCommitHook}/bin/pre-commit-hook"
       install_one "pre-push" "${prePushHook}/bin/pre-push-hook"
+      install_one "commit-msg" "${commitMsgHook}/bin/commit-msg-hook"
     '';
 
     tangledPipeline = pkgs.writeText "hooks.yml" ''
@@ -132,6 +137,7 @@
       {
         pre-commit-hook = preCommitHook;
         pre-push-hook = prePushHook;
+        commit-msg-hook = commitMsgHook;
         run-hooks = runHooks;
         install-hooks = installHooks;
       }

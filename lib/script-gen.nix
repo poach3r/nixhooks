@@ -28,6 +28,7 @@ in {
   # calls for a single stage
   genStageCalls = stage: hooks: genCalls (hooksForStage stage hooks);
 
-  # calls for every enabled hook regardless of stage,
-  genAllCalls = genCalls;
+  # calls for CI, commit-msg hooks are filtered out
+  genAllCalls = hooks:
+    genCalls (lib.filterAttrs (_: h: builtins.any (s: s != "commit-msg") h.stages) hooks);
 }
