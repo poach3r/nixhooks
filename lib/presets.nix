@@ -40,6 +40,8 @@ in {
   betterleaks = mkPreset {
     entry = "${pkgs.betterleaks}/bin/betterleaks";
     args = ["dir" "--no-banner" "--no-color"];
+    pass_filenames = false;
+    always_run = true;
     serial = false;
   };
 
