@@ -324,3 +324,16 @@ EOF
   [ "${#NIXHOOKS_FILES[@]}" -eq 1 ]
   [ "${NIXHOOKS_FILES[0]}" = "b.txt" ]
 }
+
+@test "prepush file collection excludes files deleted between the two shas" {
+  echo hi >a.txt
+  echo bye >deleteme.txt
+  git add a.txt deleteme.txt
+  git commit -q -m init
+  base_sha="$(git rev-parse HEAD)"
+  git rm -q deleteme.txt
+  git commit -q -m "delete file"
+  head_sha="$(git rev-parse HEAD)"
+  nixhooks_collect_prepush_files "$base_sha" "$head_sha"
+  [ "${#NIXHOOKS_FILES[@]}" -eq 0 ]
+}

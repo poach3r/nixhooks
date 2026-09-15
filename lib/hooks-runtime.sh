@@ -141,7 +141,7 @@ nixhooks_collect_prepush_files() {
 	else
 		while IFS= read -r -d '' f; do
 			NIXHOOKS_FILES+=("$f")
-		done < <(git diff --name-only -z "$remote_sha" "$local_sha")
+		done < <(git diff --name-only --diff-filter=ACM -z "$remote_sha" "$local_sha")
 	fi
 }
 
