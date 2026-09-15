@@ -89,6 +89,19 @@
     always_run = true;
   };
 
+  gofmt = let
+    check = pkgs.writeShellScriptBin "gofmt-check" ''
+      unformatted="$(${pkgs.go}/bin/gofmt -l "$@")"
+      if [ -n "$unformatted" ]; then
+        echo "$unformatted"
+        exit 1
+      fi
+    '';
+  in {
+    entry = "${check}/bin/gofmt-check";
+    files = "\\.go$";
+  };
+
   govet = {
     entry = "${pkgs.go}/bin/go";
     args = ["vet" "./..."];
