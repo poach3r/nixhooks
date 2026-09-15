@@ -66,6 +66,13 @@
     serial = false;
   };
 
+  stylua = {
+    entry = "${pkgs.stylua}/bin/stylua";
+    args = ["--check"];
+    files = "\\.lua$";
+    serial = false;
+  };
+
   taplo = {
     entry = "${pkgs.taplo}/bin/taplo";
     args = ["fmt" "--check"];
