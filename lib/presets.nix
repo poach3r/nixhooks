@@ -109,7 +109,7 @@
   prettier = {
     entry = "${pkgs.prettier}/bin/prettier";
     args = ["--check"];
-    files = "\\.(html|css|scss|less|js|jsx|ts|tsx)$";
+    files = "\\.(html|css|scss|less|js|jsx|ts|tsx|json)$";
     serial = false;
   };
 
