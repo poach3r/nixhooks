@@ -74,9 +74,9 @@ $ nix run .#install-hooks
 alongside your regular flake outputs and it merges the generated
 apps/packages and wires `install-hooks` into `devShells.<system>.default`
 
-Everything nixhooks-specific is passed as one `nixhooks` argument, keeping it
-separate from your regular flake outputs. `nixhooks.hooks` is keyed by
-system, while `nixhooks.settings`is not.
+Hooks are passed as a `hooks` argument keyed by system, kept separate from
+your regular flake outputs. Each system's attrset may also carry its own
+`settings`.
 
 ```nix
 {
@@ -84,8 +84,8 @@ system, while `nixhooks.settings`is not.
   outputs = { self, nixpkgs, nixhooks }: let
     pkgs = nixpkgs.legacyPackages.x86_64-linux;
   in nixhooks.lib.withHooks {
-    nixhooks = {
-      hooks.x86_64-linux = { inherit (nixhooks.lib.x86_64-linux.presets) alejandra statix; };
+    hooks.x86_64-linux = {
+      inherit (nixhooks.lib.x86_64-linux.presets) alejandra statix;
       settings = {
         parallel = true;
         tangled = {
@@ -104,6 +104,11 @@ system, while `nixhooks.settings`is not.
   };
 }
 ```
+
+> [!WARNING]
+> Passing hooks via a top-level `nixhooks = { hooks = ...; settings = ...; }`
+> argument is deprecated and will be removed in a future release. Use
+> `hooks.<system>` instead.
 
 ## Hook spec
 ```nix

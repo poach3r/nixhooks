@@ -1,13 +1,32 @@
 {nixpkgs}: {
-  nixhooks ? {hooks = {};}, # {hooks = {<system> = {...};}; settings ? {tangled, githubActions, parallel};}
+  # DEPRECATED: will be removed in a future release. Use `hooks.<system>`
+  # instead, with per-system settings at `hooks.<system>.settings`.
+  nixhooks ? null, # {hooks = {<system> = {...};}; settings ? {tangled, githubActions, parallel};}
+  hooks ? {}, # {<system> = {...} // {settings ? {tangled, githubActions, parallel};};}
   # `hooks` is keyed by system (see lib/hook-spec.nix for per-hook fields);
-  # `settings` is not
+  # each system's attrset may carry its own `settings`
   ...
 } @ args: let
-  inherit (nixhooks) hooks;
-  outputs = builtins.removeAttrs args ["nixhooks"];
-  settings = nixhooks.settings or {};
-  systems = builtins.attrNames hooks;
+  legacy = nixhooks != null;
+
+  rawHooks =
+    if legacy
+    then nixhooks.hooks or {}
+    else hooks;
+  legacySettings = nixhooks.settings or {};
+
+  outputs = builtins.removeAttrs args ["nixhooks" "hooks"];
+  systems = builtins.attrNames rawHooks;
+
+  systemHooks = system:
+    if legacy
+    then rawHooks.${system}
+    else builtins.removeAttrs rawHooks.${system} ["settings"];
+
+  systemSettings = system:
+    if legacy
+    then legacySettings
+    else rawHooks.${system}.settings or {};
 
   mergeSystem = acc: system: let
     pkgs = import nixpkgs {inherit system;};
@@ -15,8 +34,8 @@
     base = import ./lib {inherit pkgs;};
 
     hookResult = base.mkHooks {
-      hooks = hooks.${system};
-      inherit settings;
+      hooks = systemHooks system;
+      settings = systemSettings system;
     };
     hookApps = hookResult.apps;
     hookPackages = builtins.removeAttrs hookResult ["apps"];
@@ -52,5 +71,12 @@
             // {default = mergedDefaultShell;};
         };
     };
+
+  result = builtins.foldl' mergeSystem outputs systems;
 in
-  builtins.foldl' mergeSystem outputs systems
+  if legacy
+  then
+    nixpkgs.lib.warn
+    "nixhooks: the top-level `nixhooks` argument to `withHooks` is deprecated and will be removed in a future release; define hooks under `hooks.<system>` instead, with settings at `hooks.<system>.settings`"
+    result
+  else result
