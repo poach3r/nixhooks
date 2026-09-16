@@ -123,14 +123,15 @@ run_hook_parallel() {
 # buffered output once it finishes and folding a nonzero exit into
 # NIXHOOKS_FAILED. Always exits 0.
 nixhooks_wait_parallel() {
-	local i st
+	local i st content
 	for i in "${!NIXHOOKS_PARALLEL_PIDS[@]}"; do
 		st=0
 		wait "${NIXHOOKS_PARALLEL_PIDS[$i]}" || st=$?
-		cat "${NIXHOOKS_PARALLEL_LOGS[$i]}"
-		rm -f "${NIXHOOKS_PARALLEL_LOGS[$i]}"
+		content="$(<"${NIXHOOKS_PARALLEL_LOGS[$i]}")"
+		[[ -n "$content" ]] && printf '%s\n' "$content"
 		[[ "$st" -ne 0 ]] && NIXHOOKS_FAILED=1
 	done
+	rm -f "${NIXHOOKS_PARALLEL_LOGS[@]}"
 	NIXHOOKS_PARALLEL_PIDS=()
 	NIXHOOKS_PARALLEL_NAMES=()
 	NIXHOOKS_PARALLEL_LOGS=()
