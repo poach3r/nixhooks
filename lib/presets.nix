@@ -72,6 +72,21 @@ in {
     serial = false;
   };
 
+  ruff-lint = mkPreset {
+    entry = "${pkgs.ruff}/bin/ruff";
+    args = ["check" "--no-fix"];
+    files = "\\.(py|pyi|pyw|ipynb)$";
+    pass_filenames = false;
+    serial = false;
+  };
+
+  ruff-fmt = mkPreset {
+    entry = "${pkgs.ruff}/bin/ruff";
+    args = ["format" "--check"];
+    files = "\\.(py|pyi|pyw|ipynb)$";
+    serial = false;
+  };
+
   stylua = mkPreset {
     entry = "${pkgs.stylua}/bin/stylua";
     args = ["--check"];
