@@ -66,6 +66,32 @@ Or, wire it into a `shellHook` so hooks install automatically on entry (see the 
 $ nix run .#install-hooks
 ```
 
+### `lib.withHooks`
+`withHooks` is sugar over `mkHooks` for flakes. Pass it your hook config
+alongside your regular flake outputs and it merges the generated
+apps/packages and wires `install-hooks` into `devShells.<system>.default`
+
+Unlike `mkHooks`, `withHooks` never takes a `pkgs`. Instead, it builds its
+own per system from nixhooks' pinned `nixpkgs`. You may explicitly override 
+`pkgs` by passing it to nixhooks.lib: `nixhooks.lib {inherit pkgs;}`. See 
+Preset's functor note for more detail.
+
+```nix
+{
+  inputs.nixhooks.url = "git+https://tangled.org/poacher.dev/nixhooks";
+  outputs = { self, nixpkgs, nixhooks }: let
+    pkgs = nixpkgs.legacyPackages.x86_64-linux;
+  in nixhooks.lib.withHooks {
+    hooks.x86_64-linux = { inherit (nixhooks.lib.presets.x86_64-linux) alejandra statix; };
+    packages.x86_64-linux = { /* ... */ };
+    apps.x86_64-linux = { /* ... */ };
+    devShells.x86_64-linux.default = pkgs.mkShell {
+      packages = [ pkgs.jq ];
+    };
+  };
+}
+```
+
 ## Hook spec
 ```nix
 hooks.<name> = {
@@ -94,9 +120,9 @@ containing the commit message as its sole file. `files`/`exclude`/
 filenames in `pre-commit`/`pre-push`.
 
 ## Presets
-`presets` is a small built-in catalog of common tool configs -- plain
-`hooks.<name>`-shaped attrsets you can reference directly, override with
-`//`, or call as a function to override any field:
+`presets` is a small built-in catalog of common tool configs. These are 
+functors which accept either no arguments, or allow for their options to be 
+overriden in an attrSet.
 
 ```nix
 nixhooks.mkHooks {
@@ -106,6 +132,8 @@ nixhooks.mkHooks {
   };
 }
 ```
+
+For flake users, `nixhooks.lib` is itself a functor: called as `nixhooks.lib { inherit pkgs; }` it's the `mkHooks`/`presets` shown throughout this README (pkgs-bound, as above); used directly, uncalled, it exposes only what doesn't need a caller-supplied `pkgs` -- `presets.<system>`, `withHooks` (see above), and the pure `normalize*`/`default*` helpers -- not `mkHooks` or the flat `presets.<name>`, since those bake in a specific system's store paths and shouldn't have a silent implicit default.
 
 See [lib/presets.nix](./lib/presets.nix) for the full list of presets.
 

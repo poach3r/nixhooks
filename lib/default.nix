@@ -5,7 +5,16 @@
   scriptGen = import ./script-gen.nix {inherit lib;};
   tangledGen = import ./tangled-gen.nix {inherit lib;};
   githubActionsGen = import ./github-actions-gen.nix {inherit lib;};
-  presets = import ./presets.nix {inherit pkgs;};
+
+  # presets.<name> is built from the caller's own `pkgs` -- for plain
+  # `mkHooks` use, so non-flake/single-system callers see no change.
+  # presets.<system>.<name> is instead rebuilt for every other system from
+  # pkgs.path
+  presetSystems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
+  presets =
+    (import ./presets.nix {inherit pkgs;})
+    // (lib.genAttrs presetSystems
+      (system: import ./presets.nix {pkgs = import pkgs.path {inherit system;};}));
 
   runtimeLib = builtins.readFile ./hooks-runtime.sh;
   driverPreCommit = builtins.readFile ./drivers/pre-commit.sh;
@@ -164,7 +173,7 @@
           (builtins.removeAttrs hookOutputs ["tangled-pipeline" "github-actions-workflow"]);
       };
 in {
-  inherit mkHooks presets;
+  inherit mkHooks presets presetSystems;
   inherit (hookSpec) normalizeHooks normalizeHook defaultHook;
   inherit (tangledGen) normalizeTangled defaultTangled;
   inherit (githubActionsGen) normalizeGithubActions defaultGithubActions;

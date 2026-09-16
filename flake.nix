@@ -1,69 +1,48 @@
 {
-  outputs = _: let
-    npinsSources = import ./npins;
-    systems = [
-      "x86_64-linux"
-      "aarch64-linux"
-      "aarch64-darwin"
-    ];
-    forAllSystems = f:
-      builtins.listToAttrs (
-        map (system: {
-          name = system;
-          value = f system;
-        })
-        systems
-      );
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
-    perSystem = system: let
-      pkgs = import npinsSources.nixpkgs {inherit system;};
-      nixhooksLib = import ./default.nix {inherit pkgs;};
-      hooks = nixhooksLib.mkHooks {
-        parallel = true;
-        hooks =
-          {inherit (nixhooksLib.presets) commitlint;}
-          // pkgs.lib.mapAttrs (_: h: h {stages = ["pre-push"];}) {
-            inherit
-              (nixhooksLib.presets)
-              shellcheck
-              alejandra
-              bats
-              shfmt
-              deadnix
-              statix
-              ;
-          };
+  outputs = {nixpkgs, ...}: let
+    systems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
+    forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system nixpkgs.legacyPackages.${system});
+    withHooks = import ./with-hooks.nix {inherit nixpkgs;};
 
-        tangled = {
-          enable = true;
-          attr = "run-hooks";
-          flake = true;
-          when = [
-            {
-              event = ["push" "pull_request"];
-              branch = ["main"];
-            }
-          ];
-        };
+    # nixhooks.lib is a functor called with `{pkgs}`
+    lib = let
+      defaultPkgs = nixpkgs.legacyPackages.${builtins.head systems};
+      base = import ./lib {pkgs = defaultPkgs;};
+    in
+      (builtins.removeAttrs base ["mkHooks" "presets" "presetSystems"])
+      // {presets = defaultPkgs.lib.getAttrs base.presetSystems base.presets;}
+      // {inherit withHooks;}
+      // {__functor = _self: args: import ./lib args;};
+  in
+    withHooks {
+      hooks = forAllSystems (system: pkgs: let
+        nixhooksLib = import ./lib {inherit pkgs;};
+      in
+        {inherit (nixhooksLib.presets) commitlint;}
+        // pkgs.lib.mapAttrs (_: h: h {stages = ["pre-push"];}) {
+          inherit (nixhooksLib.presets) shellcheck alejandra bats shfmt deadnix statix;
+        });
+
+      parallel = true;
+      tangled = {
+        enable = true;
+        attr = "run-hooks";
+        flake = true;
+        when = [
+          {
+            event = ["push" "pull_request"];
+            branch = ["main"];
+          }
+        ];
       };
-    in {
-      inherit pkgs hooks;
-    };
 
-    systemsData = forAllSystems perSystem;
-  in {
-    lib = import ./lib;
-    apps = builtins.mapAttrs (_: d: d.hooks.apps) systemsData;
-    packages = builtins.mapAttrs (_: d: {inherit (d.hooks) tangled-pipeline;}) systemsData;
-    devShells =
-      builtins.mapAttrs (_: d: {
-        default = d.pkgs.mkShell {
-          packages = [d.pkgs.shfmt d.pkgs.npins d.pkgs.alejandra d.pkgs.bats];
-          shellHook = ''
-            ${d.hooks.install-hooks}/bin/install-hooks
-          '';
+      devShells = forAllSystems (_: pkgs: {
+        default = pkgs.mkShell {
+          packages = [pkgs.shfmt pkgs.alejandra pkgs.bats];
         };
-      })
-      systemsData;
-  };
+      });
+    }
+    // {inherit lib;};
 }

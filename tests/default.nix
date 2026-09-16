@@ -1,4 +1,4 @@
-{pkgs ? import (import ../npins).nixpkgs {}}:
+{pkgs}:
 pkgs.runCommand "nixhooks-tests"
 {
   nativeBuildInputs = [
