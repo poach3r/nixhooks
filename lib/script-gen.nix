@@ -29,6 +29,17 @@
   # run_hook_parallel never fails, so there's nothing to guard
   parallelCall = hook: "  run_hook_parallel ${lib.concatMapStringsSep " " lib.escapeShellArg (mkArgs hook)}";
 
+  precomputeCall = pair: "  nixhooks_precompute_matches ${lib.escapeShellArg pair.files} ${lib.escapeShellArg pair.exclude}";
+
+  # always_run hooks skip matching entirely, so they need no precompute.
+  genPrecomputeCalls = hooks: let
+    pairs =
+      lib.unique
+      (map (h: {inherit (h) files exclude;})
+        (builtins.filter (h: !h.always_run) hooks));
+  in
+    map precomputeCall pairs;
+
   # partitions an already-stage-filtered hook set into a parallel batch
   # followed by a nixhooks_wait_parallel barrier and then the serial tail
   genPartitionedCalls = hooks: let
@@ -36,7 +47,8 @@
     parallelHooks = builtins.filter (h: h.parallel) ordered;
     serialHooks = builtins.filter (h: !h.parallel) ordered;
     lines =
-      map parallelCall parallelHooks
+      genPrecomputeCalls ordered
+      ++ map parallelCall parallelHooks
       ++ lib.optional (parallelHooks != []) "  nixhooks_wait_parallel"
       ++ map serialCall serialHooks;
   in
