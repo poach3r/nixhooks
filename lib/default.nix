@@ -6,15 +6,9 @@
   tangledGen = import ./tangled-gen.nix {inherit lib;};
   githubActionsGen = import ./github-actions-gen.nix {inherit lib;};
 
-  # presets.<name> is built from the caller's own `pkgs` -- for plain
-  # `mkHooks` use, so non-flake/single-system callers see no change.
-  # presets.<system>.<name> is instead rebuilt for every other system from
-  # pkgs.path
-  presetSystems = ["x86_64-linux" "aarch64-linux" "aarch64-darwin"];
-  presets =
-    (import ./presets.nix {inherit pkgs;})
-    // (lib.genAttrs presetSystems
-      (system: import ./presets.nix {pkgs = import pkgs.path {inherit system;};}));
+  # built from the caller's own `pkgs`; flake consumers get one of these per
+  # system via nixhooks.lib.<system>.presets (see flake.nix).
+  presets = import ./presets.nix {inherit pkgs;};
 
   runtimeLib = builtins.readFile ./hooks-runtime.sh;
   driverPreCommit = builtins.readFile ./drivers/pre-commit.sh;
@@ -46,11 +40,13 @@
 
   mkHooks = {
     hooks, # attrset of name -> hook config, see lib/hook-spec.nix for fields.
-    tangled ? {}, # optional Tangled pipeline config, see lib/tangled-gen.nix for fields.
-    githubActions ? {}, # optional GitHub Actions workflow config, see lib/github-actions-gen.nix for fields.
-    parallel ? false, # optionally determines if hooks are ran in parallel
-  }:
-    assert lib.assertMsg (builtins.isBool parallel) "nixhooks: parallel must be a bool"; let
+    settings ? {}, # optional {tangled, githubActions, parallel}; see below.
+  }: let
+    tangled = settings.tangled or {}; # optional Tangled pipeline config, see lib/tangled-gen.nix for fields.
+    githubActions = settings.githubActions or {}; # optional GitHub Actions workflow config, see lib/github-actions-gen.nix for fields.
+    parallel = settings.parallel or false; # optionally determines if hooks are ran in parallel
+  in
+    assert lib.assertMsg (builtins.isBool parallel) "nixhooks: settings.parallel must be a bool"; let
       normalized = hookSpec.normalizeHooks hooks;
       # resolve the top-level switch + per-hook escape hatch into one
       # effective flag before codegen so lib/script-gen.nix only ever
@@ -173,7 +169,7 @@
           (builtins.removeAttrs hookOutputs ["tangled-pipeline" "github-actions-workflow"]);
       };
 in {
-  inherit mkHooks presets presetSystems;
+  inherit mkHooks presets;
   inherit (hookSpec) normalizeHooks normalizeHook defaultHook;
   inherit (tangledGen) normalizeTangled defaultTangled;
   inherit (githubActionsGen) normalizeGithubActions defaultGithubActions;

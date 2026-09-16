@@ -38,12 +38,15 @@ $ nix-build -A install-hooks && ./result/bin/install-hooks
 Or, wire it into a `shellHook` so hooks install automatically on entry (see the `devShells` output in [flake.nix](./flake.nix)).
 
 ## Usage (flake)
+`nixhooks.lib.<system>` is `mkHooks`/`presets` built from nixhooks' own
+pinned `nixpkgs` for that system. 
+
 ```nix
 {
   inputs.nixhooks.url = "git+https://tangled.org/poacher.dev/nixhooks";
   outputs = { self, nixpkgs, nixhooks }: let
     pkgs = nixpkgs.legacyPackages.x86_64-linux;
-    hooks = (nixhooks.lib { inherit pkgs; }).mkHooks {
+    hooks = nixhooks.lib.x86_64-linux.mkHooks {
       hooks = {
         shellcheck = {
           entry = "${pkgs.shellcheck}/bin/shellcheck";
@@ -71,10 +74,9 @@ $ nix run .#install-hooks
 alongside your regular flake outputs and it merges the generated
 apps/packages and wires `install-hooks` into `devShells.<system>.default`
 
-Unlike `mkHooks`, `withHooks` never takes a `pkgs`. Instead, it builds its
-own per system from nixhooks' pinned `nixpkgs`. You may explicitly override 
-`pkgs` by passing it to nixhooks.lib: `nixhooks.lib {inherit pkgs;}`. See 
-Preset's functor note for more detail.
+Everything nixhooks-specific is passed as one `nixhooks` argument, keeping it
+separate from your regular flake outputs. `nixhooks.hooks` is keyed by
+system, while `nixhooks.settings`is not.
 
 ```nix
 {
@@ -82,7 +84,18 @@ Preset's functor note for more detail.
   outputs = { self, nixpkgs, nixhooks }: let
     pkgs = nixpkgs.legacyPackages.x86_64-linux;
   in nixhooks.lib.withHooks {
-    hooks.x86_64-linux = { inherit (nixhooks.lib.presets.x86_64-linux) alejandra statix; };
+    nixhooks = {
+      hooks.x86_64-linux = { inherit (nixhooks.lib.x86_64-linux.presets) alejandra statix; };
+      settings = {
+        parallel = true;
+        tangled = {
+          enable = true;
+          attr = "run-hooks";
+          flake = true;
+        };
+      };
+    };
+
     packages.x86_64-linux = { /* ... */ };
     apps.x86_64-linux = { /* ... */ };
     devShells.x86_64-linux.default = pkgs.mkShell {
@@ -133,21 +146,19 @@ nixhooks.mkHooks {
 }
 ```
 
-For flake users, `nixhooks.lib` is itself a functor: called as `nixhooks.lib { inherit pkgs; }` it's the `mkHooks`/`presets` shown throughout this README (pkgs-bound, as above); used directly, uncalled, it exposes only what doesn't need a caller-supplied `pkgs` -- `presets.<system>`, `withHooks` (see above), and the pure `normalize*`/`default*` helpers -- not `mkHooks` or the flat `presets.<name>`, since those bake in a specific system's store paths and shouldn't have a silent implicit default.
-
 See [lib/presets.nix](./lib/presets.nix) for the full list of presets.
 
 ## Parallel execution
-By default every hook runs sequentially. Passing `parallel = true` to `mkHooks` 
-enables a two-phase model where every hook not marked `serial` runs 
+By default every hook runs sequentially. Passing `settings.parallel = true` to
+`mkHooks` enables a two-phase model where every hook not marked `serial` runs 
 concurrently, then the remaining hooks run sequentially. Note that parallelism
 can actually *decrease* your hook execution speed if its already fast. Only use
 it when needed.
 
 ```nix
 nixhooks.mkHooks {
-  parallel = true;
   hooks = {inherit (nixhooksLib.presets) shellcheck alejandra statix;};
+  settings.parallel = true;
 }
 ```
 
@@ -170,7 +181,7 @@ no commit message to check. A hook declaring multiple stages including
 ```nix
 nixhooks.mkHooks {
   hooks = { /* ... */ };
-  tangled = {
+  settings.tangled = {
     enable = true;
     attr = "run-hooks";
     flake = true;
@@ -198,7 +209,7 @@ This writes a `.tangled/workflows/hooks.yml` in the same manner as
 ```nix
 nixhooks.mkHooks {
   hooks = { /* ... */ };
-  githubActions = {
+  settings.githubActions = {
     enable = true;
     attr = "run-hooks";
     flake = true;
