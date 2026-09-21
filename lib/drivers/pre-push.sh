@@ -8,8 +8,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 	# nothing local to check.
 	[[ "$local_sha" =~ ^0+$ ]] && continue
 
+	nixhooks_enter_worktree "$local_sha"
 	nixhooks_collect_prepush_files "$remote_sha" "$local_sha"
 	nixhooks_generated_hooks
+	nixhooks_leave_worktree
 done
 
 nixhooks_summary

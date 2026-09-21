@@ -1,7 +1,7 @@
 # Unit tests for lib/hooks-runtime.sh 
 
 setup() {
-  NIXHOOKS_LIB="${NIXHOOKS_LIB:-$BATS_TEST_DIRNAME/../lib}"
+  export NIXHOOKS_LIB="${NIXHOOKS_LIB:-$BATS_TEST_DIRNAME/../lib}"
   # shellcheck source=../lib/hooks-runtime.sh
   source "$NIXHOOKS_LIB/hooks-runtime.sh"
 
@@ -336,4 +336,130 @@ EOF
   head_sha="$(git rev-parse HEAD)"
   nixhooks_collect_prepush_files "$base_sha" "$head_sha"
   [ "${#NIXHOOKS_FILES[@]}" -eq 0 ]
+}
+
+# worktree isolation 
+@test "enter_worktree checks out the given commit, ignoring the dirty working tree" {
+  echo committed >a.txt
+  git add a.txt
+  git commit -q -m init
+  sha="$(git rev-parse HEAD)"
+  echo dirty >a.txt
+  echo untracked >untracked.txt
+
+  run bash -c '
+    source "$NIXHOOKS_LIB/hooks-runtime.sh"
+    nixhooks_enter_worktree "$1"
+    [[ "$(pwd)" != "$NIXHOOKS_REPO_ROOT" ]] || exit 1
+    cat a.txt
+    [[ ! -e untracked.txt ]] || exit 1
+  ' _ "$sha"
+  [ "$status" -eq 0 ]
+  [ "$output" = "committed" ]
+}
+
+@test "leave_worktree returns to the repo and removes the worktree" {
+  echo hi >a.txt
+  git add a.txt
+  git commit -q -m init
+  sha="$(git rev-parse HEAD)"
+
+  run bash -c '
+    source "$NIXHOOKS_LIB/hooks-runtime.sh"
+    nixhooks_enter_worktree "$1"
+    wt="$NIXHOOKS_WORKTREE_DIR"
+    nixhooks_leave_worktree
+    [[ "$(pwd)" == "$NIXHOOKS_REPO_ROOT" ]] || exit 1
+    [[ ! -e "$wt" ]] || exit 1
+    [[ -z "$NIXHOOKS_WORKTREE_DIR" ]] || exit 1
+  ' _ "$sha"
+  [ "$status" -eq 0 ]
+  [ "$(git worktree list | wc -l)" -eq 1 ]
+}
+
+@test "hook edits inside a pre-push worktree never reach the real working tree" {
+  echo hi >a.txt
+  git add a.txt
+  git commit -q -m init
+  sha="$(git rev-parse HEAD)"
+
+  bash -c '
+    source "$NIXHOOKS_LIB/hooks-runtime.sh"
+    nixhooks_enter_worktree "$1"
+    echo mutated >a.txt
+    nixhooks_leave_worktree
+  ' _ "$sha"
+  [ "$(cat a.txt)" = "hi" ]
+  git diff --quiet
+}
+
+@test "enter_worktree restores GIT_INDEX_FILE on return" {
+  echo hi >a.txt
+  git add a.txt
+  git commit -q -m init
+  sha="$(git rev-parse HEAD)"
+
+  run env GIT_INDEX_FILE=.git/index bash -c '
+    source "$NIXHOOKS_LIB/hooks-runtime.sh"
+    nixhooks_enter_worktree "$1"
+    [[ -z "${GIT_INDEX_FILE-}" ]] || exit 1
+    nixhooks_leave_worktree
+    [[ "$GIT_INDEX_FILE" == .git/index ]] || exit 1
+  ' _ "$sha"
+  [ "$status" -eq 0 ]
+}
+
+# Regression: git sets only GIT_INDEX_FILE for pre-commit, and the unset
+# GIT_DIR / GIT_WORK_TREE restores used to fail the hook under `set -e`.
+@test "leave_worktree does not abort a set -e script when only GIT_INDEX_FILE was set" {
+  echo hi >a.txt
+  git add a.txt
+  git commit -q -m init
+  sha="$(git rev-parse HEAD)"
+
+  run env GIT_INDEX_FILE=.git/index bash -c '
+    set -euo pipefail
+    source "$NIXHOOKS_LIB/hooks-runtime.sh"
+    nixhooks_enter_worktree "$1"
+    nixhooks_leave_worktree
+    echo returned
+  ' _ "$sha"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *returned ]]
+}
+
+@test "leave_worktree does not abort a set -e script when no git env vars were set" {
+  echo hi >a.txt
+  git add a.txt
+  git commit -q -m init
+  sha="$(git rev-parse HEAD)"
+
+  run env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE bash -c '
+    set -euo pipefail
+    source "$NIXHOOKS_LIB/hooks-runtime.sh"
+    nixhooks_enter_worktree "$1"
+    nixhooks_leave_worktree
+    echo returned
+  ' _ "$sha"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *returned ]]
+}
+
+@test "the pre-commit driver flow completes under set -euo pipefail with only GIT_INDEX_FILE set" {
+  echo hi >a.txt
+  git add a.txt
+
+  # Same sequence as lib/drivers/pre-commit.sh, minus the generated hooks.
+  run env GIT_INDEX_FILE=.git/index bash -c '
+    set -euo pipefail
+    source "$NIXHOOKS_LIB/hooks-runtime.sh"
+    nixhooks_collect_precommit_files
+    nixhooks_enter_staged_worktree
+    nixhooks_reconcile_worktree
+    nixhooks_summary
+    echo returned
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *returned ]]
+  [ "$(git worktree list | wc -l)" -eq 1 ]
 }

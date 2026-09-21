@@ -187,8 +187,7 @@ nixhooks_collect_prepush_files() {
 	fi
 }
 
-# partial-staging isolation
-# Hooks run against a throwaway worktree checked out from what's staged
+# Working-tree isolation
 NIXHOOKS_WORKTREE_DIR=""
 NIXHOOKS_STAGED_TREE=""
 NIXHOOKS_REPO_ROOT=""
@@ -200,17 +199,9 @@ nixhooks_worktree_cleanup() {
 	fi
 }
 
-# Must run after nixhooks_collect_precommit_files (uses the real repo's index/HEAD).
-nixhooks_enter_staged_worktree() {
+# Checks out commit $1 into a throwaway detached worktree and cd's into it.
+nixhooks_enter_worktree() {
 	NIXHOOKS_REPO_ROOT="$(pwd)"
-	NIXHOOKS_STAGED_TREE="$(git write-tree)"
-
-	local commit
-	if git rev-parse --verify -q HEAD >/dev/null; then
-		commit="$(git commit-tree "$NIXHOOKS_STAGED_TREE" -p HEAD -m "nixhooks: staged snapshot")"
-	else
-		commit="$(git commit-tree "$NIXHOOKS_STAGED_TREE" -m "nixhooks: staged snapshot")"
-	fi
 
 	# git invokes hooks with GIT_INDEX_FILE. Once we cd into the
 	# throwaway worktree below, that stale relative path would be misresolved
@@ -223,18 +214,40 @@ nixhooks_enter_staged_worktree() {
 	NIXHOOKS_WORKTREE_DIR="$(mktemp -d)"
 	rmdir "$NIXHOOKS_WORKTREE_DIR" # git worktree add creates the dir itself
 	trap nixhooks_worktree_cleanup EXIT
-	git worktree add --quiet --detach "$NIXHOOKS_WORKTREE_DIR" "$commit"
+	git worktree add --quiet --detach "$NIXHOOKS_WORKTREE_DIR" "$1"
 	cd "$NIXHOOKS_WORKTREE_DIR" || exit 1
 }
 
-# Re-stages anything a hook mutated inside the isolated worktree. If the real
-# working tree file was identical to what was staged beforehand also updates
-# the real working tree file
-nixhooks_reconcile_worktree() {
+nixhooks_return_to_repo() {
 	cd "$NIXHOOKS_REPO_ROOT" || exit 1
-	[[ -n "$NIXHOOKS_SAVED_GIT_INDEX_FILE" ]] && export GIT_INDEX_FILE="$NIXHOOKS_SAVED_GIT_INDEX_FILE"
-	[[ -n "$NIXHOOKS_SAVED_GIT_DIR" ]] && export GIT_DIR="$NIXHOOKS_SAVED_GIT_DIR"
-	[[ -n "$NIXHOOKS_SAVED_GIT_WORK_TREE" ]] && export GIT_WORK_TREE="$NIXHOOKS_SAVED_GIT_WORK_TREE"
+	# `if`, not `&&`: a false `[[ ]]` as the last command makes this return 1,
+	# which aborts the hook under `set -e`.
+	if [[ -n "$NIXHOOKS_SAVED_GIT_INDEX_FILE" ]]; then export GIT_INDEX_FILE="$NIXHOOKS_SAVED_GIT_INDEX_FILE"; fi
+	if [[ -n "$NIXHOOKS_SAVED_GIT_DIR" ]]; then export GIT_DIR="$NIXHOOKS_SAVED_GIT_DIR"; fi
+	if [[ -n "$NIXHOOKS_SAVED_GIT_WORK_TREE" ]]; then export GIT_WORK_TREE="$NIXHOOKS_SAVED_GIT_WORK_TREE"; fi
+}
+
+nixhooks_enter_staged_worktree() {
+	NIXHOOKS_STAGED_TREE="$(git write-tree)"
+
+	local commit
+	if git rev-parse --verify -q HEAD >/dev/null; then
+		commit="$(git commit-tree "$NIXHOOKS_STAGED_TREE" -p HEAD -m "nixhooks: staged snapshot")"
+	else
+		commit="$(git commit-tree "$NIXHOOKS_STAGED_TREE" -m "nixhooks: staged snapshot")"
+	fi
+
+	nixhooks_enter_worktree "$commit"
+}
+
+nixhooks_leave_worktree() {
+	nixhooks_return_to_repo
+	nixhooks_worktree_cleanup
+}
+
+# Re-stages anything a hook mutated inside the isolated worktree
+nixhooks_reconcile_worktree() {
+	nixhooks_return_to_repo
 
 	local f mode orig_blob new_hash real_blob
 	for f in "${NIXHOOKS_FILES[@]}"; do
