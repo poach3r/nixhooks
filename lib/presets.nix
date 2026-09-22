@@ -227,4 +227,21 @@ in {
     files = "\\.zig$";
     serial = false;
   };
+
+  scalafmt = let
+    # scalafmt --check exits 0 on invalid scala so we need to wrap it to exit 1
+    check = pkgs.writeShellScriptBin "scalafmt-check" ''
+      out="$(${pkgs.scalafmt}/bin/scalafmt --check "$@" 2>&1)"
+      status=$?
+      if [ "$status" -ne 0 ] || printf '%s\n' "$out" | grep -q 'error:'; then
+        printf '%s\n' "$out"
+        exit 1
+      fi
+    '';
+  in
+    mkPreset {
+      entry = "${check}/bin/scalafmt-check";
+      files = "\\.scala$";
+      serial = false;
+    };
 }
