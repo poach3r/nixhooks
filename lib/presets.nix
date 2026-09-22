@@ -244,4 +244,11 @@ in {
       files = "\\.scala$";
       serial = false;
     };
+
+  google-java-format = mkPreset {
+    entry = "${pkgs.google-java-format}/bin/google-java-format";
+    args = ["--set-exit-if-changed"];
+    files = "\\.java$";
+    serial = false;
+  };
 }
