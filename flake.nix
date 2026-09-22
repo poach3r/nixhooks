@@ -12,15 +12,15 @@
   in
     withHooks {
       hooks = forAllSystems (_: pkgs:
-        {inherit (self.lib.x86_64-linux.presets) commitlint;}
-        // pkgs.lib.mapAttrs (_: h: h {stages = ["pre-push"];}) {
-          inherit (self.lib.x86_64-linux.presets) shellcheck alejandra bats shfmt deadnix statix;
-        }
-        // {
+        {
+          inherit (self.lib.x86_64-linux.presets) commitlint;
           settings = {
             parallel = true;
             tangled.enable = true;
           };
+        }
+        // pkgs.lib.mapAttrs (_: h: h {stages = ["pre-push"];}) {
+          inherit (self.lib.x86_64-linux.presets) shellcheck alejandra bats shfmt deadnix statix;
         });
 
       devShells = forAllSystems (_: pkgs: {
