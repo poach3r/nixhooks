@@ -1,0 +1,18 @@
+when:
+  - event: ["push"]
+    branch: ["main"]
+
+engine: microvm
+image: nixos
+
+clone:
+  depth: 0
+
+steps:
+  - name: "mirror to GitHub"
+    command: |
+      if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+        git fetch --unshallow origin
+      fi
+      git branch -f main HEAD
+      git push --mirror "https://x-access-token:${GITHUB_TOKEN}@github.com/poach3r/nixhooks.git"
