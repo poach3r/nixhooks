@@ -9,7 +9,7 @@ in {
 
   alejandra = mkPreset {
     entry = "${pkgs.alejandra}/bin/alejandra";
-    args = ["--check"];
+    args = ["check" "--exclude" "npins/**"];
     files = "\\.nix$";
     serial = false;
   };
@@ -244,11 +244,4 @@ in {
       files = "\\.scala$";
       serial = false;
     };
-
-  google-java-format = mkPreset {
-    entry = "${pkgs.google-java-format}/bin/google-java-format";
-    args = ["--set-exit-if-changed"];
-    files = "\\.java$";
-    serial = false;
-  };
 }
