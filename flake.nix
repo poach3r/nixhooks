@@ -11,16 +11,16 @@
     withHooks = import ./with-hooks.nix {inherit nixpkgs;};
   in
     withHooks {
-      hooks = forAllSystems (_: pkgs:
+      hooks = forAllSystems (system: pkgs:
         {
-          inherit (self.lib.x86_64-linux.presets) commitlint;
+          inherit (self.lib.${system}.presets) commitlint;
           settings = {
             parallel = true;
             tangled.enable = true;
           };
         }
         // pkgs.lib.mapAttrs (_: h: h {stages = ["pre-push"];}) {
-          inherit (self.lib.x86_64-linux.presets) shellcheck alejandra bats shfmt deadnix statix;
+          inherit (self.lib.${system}.presets) shellcheck alejandra bats shfmt deadnix statix;
         });
 
       devShells = forAllSystems (_: pkgs: {
