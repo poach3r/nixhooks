@@ -41,15 +41,19 @@ nixhooks_matched_files() {
 	if [[ -z "${NIXHOOKS_MATCH_CACHE[$key]+set}" ]]; then
 		[[ -z "$NIXHOOKS_MATCH_CACHE_DIR" ]] && NIXHOOKS_MATCH_CACHE_DIR="$(mktemp -d)"
 		local cache_file="$NIXHOOKS_MATCH_CACHE_DIR/$((NIXHOOKS_MATCH_CACHE_COUNTER++))"
-		if [[ "$exclude_re" != '^$' ]]; then
-			printf '%s\0' "${NIXHOOKS_FILES[@]}" |
-				{ grep -zE -- "$files_re" || true; } |
-				{ grep -zvE -- "$exclude_re" || true; } \
-					>"$cache_file"
+		if ((${#NIXHOOKS_FILES[@]} == 0)); then
+			: >"$cache_file"
 		else
-			printf '%s\0' "${NIXHOOKS_FILES[@]}" |
-				{ grep -zE -- "$files_re" || true; } \
-					>"$cache_file"
+			if [[ "$exclude_re" != '^$' ]]; then
+				printf '%s\0' "${NIXHOOKS_FILES[@]}" |
+					{ grep -zE -- "$files_re" || true; } |
+					{ grep -zvE -- "$exclude_re" || true; } \
+						>"$cache_file"
+			else
+				printf '%s\0' "${NIXHOOKS_FILES[@]}" |
+					{ grep -zE -- "$files_re" || true; } \
+						>"$cache_file"
+			fi
 		fi
 		NIXHOOKS_MATCH_CACHE["$key"]="$cache_file"
 	fi

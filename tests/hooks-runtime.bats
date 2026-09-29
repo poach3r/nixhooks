@@ -50,6 +50,14 @@ teardown() {
   [ ! -e "$RECORD_FILE" ]
 }
 
+@test "run_hook skips default files regex when there are no candidate files" {
+  NIXHOOKS_FILES=()
+  run run_hook myhook '.*' '^$' 1 0 "$RECORDER" ''
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"nixhooks: skip  myhook (no matching files)"* ]]
+  [ ! -e "$RECORD_FILE" ]
+}
+
 @test "run_hook with always_run=1 invokes the entry with no files matched" {
   NIXHOOKS_FILES=()
   run_hook myhook '.*' '^$' 1 1 "$RECORDER" ''
