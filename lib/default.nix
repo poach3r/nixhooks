@@ -157,9 +157,26 @@
           github-actions-workflow = githubActionsWorkflow;
           gen-github-actions-workflow = genGithubActionsWorkflow;
         };
+      shellHook = ''
+        ${installHooks}/bin/install-hooks
+      '';
+      # deprecated: derivations used to sit at the top level of the result.
+      removedTopLevel = lib.mapAttrs (name: _:
+        throw "nixhooks: `hooks.${name}` has been removed; use `hooks.packages.${name}` instead")
+      hookOutputs;
     in
-      hookOutputs
+      removedTopLevel
       // {
+        inherit shellHook;
+        packages = hookOutputs;
+
+        # returns a copy of `shell` that installs hooks on entry
+        wrapShell = shell:
+          pkgs.mkShell {
+            inputsFrom = [shell];
+            inherit shellHook;
+          };
+
         apps =
           builtins.mapAttrs
           (_: drv: {

@@ -36,7 +36,7 @@
     buildCmd =
       if cfg.flake
       then "nix run .#${cfg.attr}"
-      else "nix-build -A ${cfg.attr} && ./result/bin/${cfg.attr}";
+      else "nix-build -A packages.${cfg.attr} && ./result/bin/${cfg.attr}";
   in
     {
       inherit (cfg) when engine;

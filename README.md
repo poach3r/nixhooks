@@ -32,10 +32,24 @@ nixhooks.mkHooks {
 ```
 
 ```console
-$ nix-build -A install-hooks && ./result/bin/install-hooks
+$ nix-build -A packages.install-hooks && ./result/bin/install-hooks
 ```
 
-Or, wire it into a `shellHook` so hooks install automatically on entry (see the `devShells` output in [flake.nix](./flake.nix)).
+Or, install hooks automatically on shell entry with a `shell.nix`:
+
+```nix
+{ pkgs ? import <nixpkgs> { } }:
+
+let
+  hooks = import ./default.nix { inherit pkgs; };
+in
+hooks.wrapShell (pkgs.mkShell {
+  packages = [ pkgs.jq ];
+})
+```
+
+`wrapShell` keeps the shell's inputs and appends to its existing `shellHook`.
+If you'd rather splice it in yourself, `hooks.shellHook` is the bare snippet.
 
 ## Usage (flake)
 `nixhooks.lib.<system>` is `mkHooks`/`presets` built from nixhooks' own
@@ -55,12 +69,11 @@ pinned `nixpkgs` for that system.
       };
     };
   in {
-    apps.x86_64-linux = hooks.apps; 
-    devShells.x86_64-linux.default = pkgs.mkShell {
-      shellHook = ''
-        ${hooks.install-hooks}/bin/install-hooks
-      '';
-    };
+    packages.x86_64-linux = hooks.packages;
+    apps.x86_64-linux = hooks.apps;
+    devShells.x86_64-linux.default = hooks.wrapShell (pkgs.mkShell {
+      packages = [ pkgs.jq ];
+    });
   };
 }
 ```
@@ -105,10 +118,15 @@ your regular flake outputs. Each system's attrset may also carry its own
 }
 ```
 
-> [!WARNING]
-> Passing hooks via a top-level `nixhooks = { hooks = ...; settings = ...; }`
-> argument is deprecated and will be removed in a future release. Use
-> `hooks.<system>` instead.
+## Migrating
+- The top-level `nixhooks = { hooks = ...; settings = ...; }` argument to
+  `withHooks` has been removed. Use `hooks.<system>` instead, with settings
+  at `hooks.<system>.settings`.
+- `mkHooks` no longer exposes its derivations at the top level; they live
+  under `packages` (e.g. `hooks.install-hooks` is now
+  `hooks.packages.install-hooks`). For a `shellHook`, prefer
+  `hooks.shellHook` or `hooks.wrapShell`. Non-flake CI pipelines generated
+  before this change run `nix-build -A run-hooks`, so regenerate them.
 
 ## Hook spec
 ```nix
@@ -202,7 +220,7 @@ nixhooks.mkHooks {
 ```
 
 ```console
-$ nix-build -A gen-tangled-pipeline && ./result/bin/gen-tangled-pipeline
+$ nix-build -A packages.gen-tangled-pipeline && ./result/bin/gen-tangled-pipeline
 gen-tangled-pipeline: wrote .tangled/workflows/hooks.yml
 ```
 
@@ -229,7 +247,7 @@ nixhooks.mkHooks {
 ```
 
 ```console
-$ nix-build -A gen-github-actions-workflow && ./result/bin/gen-github-actions-workflow
+$ nix-build -A packages.gen-github-actions-workflow && ./result/bin/gen-github-actions-workflow
 gen-github-actions-workflow: wrote .github/workflows/hooks.yml
 ```
 

@@ -31,7 +31,7 @@
     buildCmd =
       if cfg.flake
       then "nix run .#${cfg.attr}"
-      else "nix-build -A ${cfg.attr} && ./result/bin/${cfg.attr}";
+      else "nix-build -A packages.${cfg.attr} && ./result/bin/${cfg.attr}";
 
     cacheStep = lib.optional cfg.cache {
       uses = "nix-community/cache-nix-action@v7";
