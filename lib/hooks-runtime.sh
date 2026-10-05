@@ -12,10 +12,12 @@ NIXHOOKS_PARALLEL_JOB_DIR=""
 # files_re/exclude_re pair -> path of a file holding the matched filenames.
 # A file, not a variable, because $(...) strips embedded NULs and the
 # matches are NUL-delimited. Lets hooks that share a pattern reuse one match
-# instead of re-scanning $NIXHOOKS_FILES each; see nixhooks_matched_files.
-declare -gA NIXHOOKS_MATCH_CACHE=()
+# instead of re-scanning $NIXHOOKS_FILES each; see nixhooks_match_cache_file.
+# Parallel arrays, not an associative array, for bash 3.2.
+NIXHOOKS_MATCH_KEYS=()
+NIXHOOKS_MATCH_PATHS=()
 NIXHOOKS_MATCH_CACHE_DIR=""
-NIXHOOKS_MATCH_CACHE_COUNTER=0
+NIXHOOKS_MATCH_FILE=""
 
 _nixhooks_skip_list() {
 	IFS=',' read -ra _nixhooks_skip <<<"${SKIP:-}"
@@ -24,50 +26,52 @@ _nixhooks_skip_list
 
 should_skip() {
 	local name="$1" s
-	for s in "${_nixhooks_skip[@]}"; do
+	# bash < 4.4 treats an empty array as unbound under set -u
+	for s in ${_nixhooks_skip[@]+"${_nixhooks_skip[@]}"}; do
 		[[ "$s" == "$name" ]] && return 0
 	done
 	return 1
 }
 
-# Populates the caller's array (named by $3) with $NIXHOOKS_FILES entries
-# matching files_re and not exclude_re ("^$" means exclude nothing).
-# Computed once per pair and cached in NIXHOOKS_MATCH_CACHE.
-nixhooks_matched_files() {
+# Sets NIXHOOKS_MATCH_FILE to the cached NUL-delimited $NIXHOOKS_FILES
+# entries matching files_re and not exclude_re ("^$" means exclude nothing).
+# A global, not stdout, since a $(...) subshell would lose the cache entry.
+nixhooks_match_cache_file() {
 	local files_re="$1" exclude_re="$2"
-	local -n out_matched="$3"
 	local key="${files_re}"$'\x1e'"${exclude_re}"
+	local i n="${#NIXHOOKS_MATCH_KEYS[@]}"
 
-	if [[ -z "${NIXHOOKS_MATCH_CACHE[$key]+set}" ]]; then
-		[[ -z "$NIXHOOKS_MATCH_CACHE_DIR" ]] && NIXHOOKS_MATCH_CACHE_DIR="$(mktemp -d)"
-		local cache_file="$NIXHOOKS_MATCH_CACHE_DIR/$((NIXHOOKS_MATCH_CACHE_COUNTER++))"
-		if ((${#NIXHOOKS_FILES[@]} == 0)); then
-			: >"$cache_file"
-		else
-			if [[ "$exclude_re" != '^$' ]]; then
-				printf '%s\0' "${NIXHOOKS_FILES[@]}" |
-					{ grep -zE -- "$files_re" || true; } |
-					{ grep -zvE -- "$exclude_re" || true; } \
-						>"$cache_file"
-			else
-				printf '%s\0' "${NIXHOOKS_FILES[@]}" |
-					{ grep -zE -- "$files_re" || true; } \
-						>"$cache_file"
-			fi
+	for ((i = 0; i < n; i++)); do
+		if [[ "${NIXHOOKS_MATCH_KEYS[i]}" == "$key" ]]; then
+			NIXHOOKS_MATCH_FILE="${NIXHOOKS_MATCH_PATHS[i]}"
+			return 0
 		fi
-		NIXHOOKS_MATCH_CACHE["$key"]="$cache_file"
-	fi
+	done
 
-	# shellcheck disable=SC2034 # written via nameref; read by the caller
-	mapfile -d '' out_matched <"${NIXHOOKS_MATCH_CACHE[$key]}"
+	[[ -z "$NIXHOOKS_MATCH_CACHE_DIR" ]] && NIXHOOKS_MATCH_CACHE_DIR="$(mktemp -d)"
+	local cache_file="$NIXHOOKS_MATCH_CACHE_DIR/$n"
+	if ((${#NIXHOOKS_FILES[@]} == 0)); then
+		: >"$cache_file"
+	elif [[ "$exclude_re" != '^$' ]]; then
+		printf '%s\0' "${NIXHOOKS_FILES[@]}" |
+			{ grep -zE -- "$files_re" || true; } |
+			{ grep -zvE -- "$exclude_re" || true; } \
+				>"$cache_file"
+	else
+		printf '%s\0' "${NIXHOOKS_FILES[@]}" |
+			{ grep -zE -- "$files_re" || true; } \
+				>"$cache_file"
+	fi
+	NIXHOOKS_MATCH_KEYS+=("$key")
+	NIXHOOKS_MATCH_PATHS+=("$cache_file")
+	NIXHOOKS_MATCH_FILE="$cache_file"
 }
 
-# Warms NIXHOOKS_MATCH_CACHE for a pair before any hooks run, so parallel
-# jobs (forked copies of this process) inherit it instead of each
-# recomputing their own. Called by generated scripts; see script-gen.nix.
+# Warms the match cache for a pair before any hooks run, so parallel jobs
+# (forked copies of this process) inherit it instead of each recomputing
+# their own. Called by generated scripts; see script-gen.nix.
 nixhooks_precompute_matches() {
-	local -a _nixhooks_discard
-	nixhooks_matched_files "$1" "$2" _nixhooks_discard
+	nixhooks_match_cache_file "$1" "$2"
 }
 
 # Args: name files_regex exclude_regex pass_filenames(0|1) always_run(0|1) entry path_prefix [extra_args...]
@@ -77,16 +81,20 @@ nixhooks_precompute_matches() {
 run_hook() {
 	local name="$1" files_re="$2" exclude_re="$3" pass_filenames="$4" always_run="$5" entry="$6" path_prefix="$7"
 	shift 7
-	local extra_args=("$@")
+	# "$@", not a copied array: empty "$@" is safe under set -u on bash < 4.4
+	local cmd=("$entry" "$@")
 
 	if should_skip "$name"; then
 		echo "nixhooks: skip  $name (SKIP)"
 		return 0
 	fi
 
-	local matched=()
+	local matched=() f
 	if [[ "$always_run" != 1 ]]; then
-		nixhooks_matched_files "$files_re" "$exclude_re" matched
+		nixhooks_match_cache_file "$files_re" "$exclude_re"
+		while IFS= read -r -d '' f; do
+			matched+=("$f")
+		done <"$NIXHOOKS_MATCH_FILE"
 		if [[ ${#matched[@]} -eq 0 ]]; then
 			echo "nixhooks: skip  $name (no matching files)"
 			return 0
@@ -94,7 +102,6 @@ run_hook() {
 	fi
 
 	echo "nixhooks: run   $name"
-	local cmd=("$entry" "${extra_args[@]}")
 	if [[ "$pass_filenames" == 1 && "$always_run" != 1 ]]; then
 		cmd+=("${matched[@]}")
 	fi
@@ -135,7 +142,7 @@ nixhooks_wait_parallel() {
 		[[ -n "$content" ]] && printf '%s\n' "$content"
 		[[ "$st" -ne 0 ]] && NIXHOOKS_FAILED=1
 	done
-	rm -f "${NIXHOOKS_PARALLEL_LOGS[@]}"
+	rm -f ${NIXHOOKS_PARALLEL_LOGS[@]+"${NIXHOOKS_PARALLEL_LOGS[@]}"}
 	NIXHOOKS_PARALLEL_PIDS=()
 	NIXHOOKS_PARALLEL_NAMES=()
 	NIXHOOKS_PARALLEL_LOGS=()
@@ -254,7 +261,8 @@ nixhooks_reconcile_worktree() {
 	nixhooks_return_to_repo
 
 	local f mode orig_blob new_hash real_blob
-	for f in "${NIXHOOKS_FILES[@]}"; do
+	# empty for deletion-only commits
+	for f in ${NIXHOOKS_FILES[@]+"${NIXHOOKS_FILES[@]}"}; do
 		orig_blob="$(git rev-parse "$NIXHOOKS_STAGED_TREE:$f" 2>/dev/null)" || continue
 		new_hash="$(git hash-object "$NIXHOOKS_WORKTREE_DIR/$f" 2>/dev/null)" || continue
 		[[ "$new_hash" == "$orig_blob" ]] && continue # hook didn't touch this file

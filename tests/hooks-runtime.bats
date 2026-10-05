@@ -258,6 +258,27 @@ EOF
   [[ "$output" == *"one or more hooks failed"* ]]
 }
 
+# match cache
+
+@test "hooks sharing a files/exclude pair reuse one cached match" {
+  NIXHOOKS_FILES=("a.sh" "b.nix" "vendor/c.sh")
+  nixhooks_precompute_matches '\.sh$' '^vendor/'
+  local first="$NIXHOOKS_MATCH_FILE"
+  nixhooks_precompute_matches '\.nix$' '^$'
+  nixhooks_precompute_matches '\.sh$' '^vendor/'
+  [ "$NIXHOOKS_MATCH_FILE" = "$first" ]
+  [ "$(find "$NIXHOOKS_MATCH_CACHE_DIR" -type f | wc -l)" -eq 2 ]
+
+  run_hook myhook '\.sh$' '^vendor/' 1 0 "$RECORDER" ''
+  [ "$(cat "$RECORD_FILE")" = "a.sh" ]
+}
+
+@test "the match cache keeps filenames with spaces and newlines intact" {
+  NIXHOOKS_FILES=("a b.sh" $'c\nd.sh' "e.txt")
+  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER" ''
+  [ "$(cat "$RECORD_FILE")" = $'a b.sh\nc\nd.sh' ]
+}
+
 @test "nixhooks_summary exits 0 when nothing failed" {
   NIXHOOKS_FAILED=0
   run nixhooks_summary
@@ -470,4 +491,24 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *returned ]]
   [ "$(git worktree list | wc -l)" -eq 1 ]
+}
+
+# bash < 4.4 treats the empty NIXHOOKS_FILES as unbound under set -u
+@test "the pre-commit driver flow completes under set -euo pipefail for a deletion-only commit" {
+  echo hi >a.txt
+  git add a.txt
+  git commit -qm init
+  git rm -q a.txt
+
+  run bash -c '
+    set -euo pipefail
+    source "$NIXHOOKS_LIB/hooks-runtime.sh"
+    nixhooks_collect_precommit_files
+    nixhooks_enter_staged_worktree
+    nixhooks_reconcile_worktree
+    nixhooks_summary
+    echo returned
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *returned ]]
 }
