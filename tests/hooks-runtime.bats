@@ -30,7 +30,7 @@ teardown() {
 
 @test "run_hook passes only files matching 'files' to the entry" {
   NIXHOOKS_FILES=("a.sh" "b.txt")
-  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER" ''
+  run_hook myhook '\.sh$' '^$' 1 0 1 "" "$RECORDER" ''
   run cat "$RECORD_FILE"
   [[ "$output" == *"a.sh"* ]]
   [[ "$output" != *"b.txt"* ]]
@@ -38,7 +38,7 @@ teardown() {
 
 @test "run_hook excludes files matching 'exclude'" {
   NIXHOOKS_FILES=("a.sh" "vendor/b.sh")
-  run_hook myhook '\.sh$' '^vendor/' 1 0 "$RECORDER" ''
+  run_hook myhook '\.sh$' '^vendor/' 1 0 1 "" "$RECORDER" ''
   run cat "$RECORD_FILE"
   [[ "$output" == *"a.sh"* ]]
   [[ "$output" != *"vendor/b.sh"* ]]
@@ -46,13 +46,13 @@ teardown() {
 
 @test "run_hook does not invoke the entry when nothing matches" {
   NIXHOOKS_FILES=("a.txt")
-  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER" ''
+  run_hook myhook '\.sh$' '^$' 1 0 1 "" "$RECORDER" ''
   [ ! -e "$RECORD_FILE" ]
 }
 
 @test "run_hook skips default files regex when there are no candidate files" {
   NIXHOOKS_FILES=()
-  run run_hook myhook '.*' '^$' 1 0 "$RECORDER" ''
+  run run_hook myhook '.*' '^$' 1 0 1 "" "$RECORDER" ''
   [ "$status" -eq 0 ]
   [[ "$output" == *"nixhooks: skip  myhook (no matching files)"* ]]
   [ ! -e "$RECORD_FILE" ]
@@ -60,7 +60,7 @@ teardown() {
 
 @test "run_hook with always_run=1 invokes the entry with no files matched" {
   NIXHOOKS_FILES=()
-  run_hook myhook '.*' '^$' 1 1 "$RECORDER" ''
+  run_hook myhook '.*' '^$' 1 1 1 "" "$RECORDER" ''
   [ -e "$RECORD_FILE" ]
   # $(...) strips the recorder's trailing newline, so this is empty iff no
   # arguments were passed (printf '%s\n' with zero args still emits one blank line).
@@ -69,14 +69,14 @@ teardown() {
 
 @test "run_hook with pass_filenames=0 invokes the entry without filenames" {
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 0 0 "$RECORDER" ''
+  run_hook myhook '\.sh$' '^$' 0 0 1 "" "$RECORDER" ''
   [ -e "$RECORD_FILE" ]
   [ -z "$(cat "$RECORD_FILE")" ]
 }
 
 @test "run_hook appends the collected commit-msg file as a trailing arg" {
   NIXHOOKS_FILES=("/tmp/some/COMMIT_EDITMSG")
-  run_hook commitlint '.*' '^$' 1 0 "$RECORDER" '' --edit
+  run_hook commitlint '.*' '^$' 1 0 1 "" "$RECORDER" '' --edit
   run cat "$RECORD_FILE"
   [[ "$output" == *"--edit"* ]]
   [[ "$output" == *"/tmp/some/COMMIT_EDITMSG"* ]]
@@ -101,7 +101,7 @@ EOF
   chmod +x "$checker"
 
   NIXHOOKS_FILES=()
-  run run_hook myhook '.*' '^$' 1 1 "$checker" "$extra_bin_dir"
+  run run_hook myhook '.*' '^$' 1 1 1 "" "$checker" "$extra_bin_dir"
   [ "$status" -eq 0 ]
   [[ "$output" == *"$extra_bin_dir/sibling-tool"* ]]
 }
@@ -116,7 +116,7 @@ EOF
 
   NIXHOOKS_FAILED=0
   NIXHOOKS_FILES=()
-  run_hook myhook '.*' '^$' 1 1 "$checker" '' || true
+  run_hook myhook '.*' '^$' 1 1 1 "" "$checker" '' || true
   [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
 
@@ -125,21 +125,21 @@ EOF
 @test "run_hook honors SKIP and never invokes the entry" {
   _nixhooks_skip=("myhook")
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER" ''
+  run_hook myhook '\.sh$' '^$' 1 0 1 "" "$RECORDER" ''
   [ ! -e "$RECORD_FILE" ]
 }
 
 @test "run_hook sets NIXHOOKS_FAILED when the entry fails, without aborting" {
   NIXHOOKS_FAILED=0
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 1 0 false '' || true
+  run_hook myhook '\.sh$' '^$' 1 0 1 "" false '' || true
   [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
 
 @test "run_hook leaves NIXHOOKS_FAILED untouched when the entry succeeds" {
   NIXHOOKS_FAILED=0
   NIXHOOKS_FILES=("a.sh")
-  run_hook myhook '\.sh$' '^$' 1 0 true ''
+  run_hook myhook '\.sh$' '^$' 1 0 1 "" true ''
   [ "$NIXHOOKS_FAILED" -eq 0 ]
 }
 
@@ -147,14 +147,76 @@ EOF
 
 @test "run_hook itself returns nonzero when the entry fails" {
   NIXHOOKS_FILES=("a.sh")
-  run run_hook myhook '\.sh$' '^$' 1 0 false ''
+  run run_hook myhook '\.sh$' '^$' 1 0 1 "" false ''
   [ "$status" -eq 1 ]
 }
 
 @test "run_hook itself returns zero when the entry succeeds" {
   NIXHOOKS_FILES=("a.sh")
-  run run_hook myhook '\.sh$' '^$' 1 0 true ''
+  run run_hook myhook '\.sh$' '^$' 1 0 1 "" true ''
   [ "$status" -eq 0 ]
+}
+
+# run_hook: fallback / required
+
+@test "run_hook falls back to PATH when entry is missing" {
+  mkdir -p "$TEST_REPO/bin"
+  cp "$RECORDER" "$TEST_REPO/bin/mytool"
+  NIXHOOKS_FILES=("a.sh")
+  PATH="$TEST_REPO/bin:$PATH" run run_hook myhook '\.sh$' '^$' 1 0 1 mytool /nonexistent/bin/mytool ''
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"nixhooks: run   myhook (PATH: $TEST_REPO/bin/mytool)"* ]]
+  [ "$(cat "$RECORD_FILE")" = "a.sh" ]
+}
+
+@test "run_hook fails a required hook whose entry and fallback are missing" {
+  NIXHOOKS_FAILED=0
+  NIXHOOKS_FILES=("a.sh")
+  run_hook myhook '\.sh$' '^$' 1 0 1 nixhooks-no-such-tool /nonexistent/bin/mytool '' >"$TEST_REPO/out" || true
+  [ "$NIXHOOKS_FAILED" -eq 1 ]
+  [[ "$(cat "$TEST_REPO/out")" == *"nixhooks: FAIL  myhook (nixhooks-no-such-tool not found)"* ]]
+}
+
+@test "run_hook only warns when a non-required hook's tool is missing" {
+  NIXHOOKS_FAILED=0
+  NIXHOOKS_FILES=("a.sh")
+  run_hook myhook '\.sh$' '^$' 1 0 0 "" /nonexistent/bin/mytool '' >"$TEST_REPO/out"
+  [ "$NIXHOOKS_FAILED" -eq 0 ]
+  [[ "$(cat "$TEST_REPO/out")" == *"nixhooks: WARN  myhook (mytool not found, not required)"* ]]
+}
+
+@test "nixhooks_tool prefers the store binary, then PATH" {
+  mkdir -p "$TEST_REPO/bin"
+  cp "$RECORDER" "$TEST_REPO/bin/mytool"
+  run nixhooks_tool "$RECORDER" mytool
+  [ "$output" = "$RECORDER" ]
+  PATH="$TEST_REPO/bin:$PATH" run nixhooks_tool /nonexistent/bin/mytool mytool
+  [ "$output" = "$TEST_REPO/bin/mytool" ]
+}
+
+@test "nixhooks_tool fails with 127 when the tool is missing" {
+  run nixhooks_tool /nonexistent/bin/mytool nixhooks-no-such-tool
+  [ "$status" -eq 127 ]
+  [[ "$output" == *"nixhooks: nixhooks-no-such-tool not found"* ]]
+}
+
+# script-gen.nix turns `script` hooks into functions passed as the entry
+@test "run_hook runs a function entry with the matched files" {
+  nixhooks_hook_myhook() (printf '%s\n' "$@" >"$RECORD_FILE")
+  NIXHOOKS_FILES=("a.sh" "b.txt")
+  run_hook myhook '\.sh$' '^$' 1 0 1 "" nixhooks_hook_myhook '' --flag
+  [ "$(cat "$RECORD_FILE")" = $'--flag\na.sh' ]
+}
+
+@test "a failing non-required hook doesn't fail the run, serial or parallel" {
+  NIXHOOKS_FAILED=0
+  NIXHOOKS_FILES=("a.sh")
+  run_hook serial '\.sh$' '^$' 1 0 0 "" false '' >"$TEST_REPO/out"
+  run_hook_parallel par '\.sh$' '^$' 1 0 0 "" false ''
+  nixhooks_wait_parallel >>"$TEST_REPO/out"
+  [ "$NIXHOOKS_FAILED" -eq 0 ]
+  [[ "$(cat "$TEST_REPO/out")" == *"nixhooks: WARN  serial (failed, not required)"* ]]
+  [[ "$(cat "$TEST_REPO/out")" == *"nixhooks: WARN  par (failed, not required)"* ]]
 }
 
 # run_hook_parallel / nixhooks_wait_parallel 
@@ -175,8 +237,8 @@ EOF
   chmod +x "$recorder_b"
 
   NIXHOOKS_FILES=("a.sh")
-  run_hook_parallel jobA '\.sh$' '^$' 1 0 "$RECORDER" ''
-  run_hook_parallel jobB '\.sh$' '^$' 1 0 "$recorder_b" ''
+  run_hook_parallel jobA '\.sh$' '^$' 1 0 1 "" "$RECORDER" ''
+  run_hook_parallel jobB '\.sh$' '^$' 1 0 1 "" "$recorder_b" ''
   nixhooks_wait_parallel
 
   run cat "$RECORD_FILE"
@@ -188,8 +250,8 @@ EOF
 @test "nixhooks_wait_parallel sets NIXHOOKS_FAILED when any job fails" {
   NIXHOOKS_FAILED=0
   NIXHOOKS_FILES=()
-  run_hook_parallel jobA '.*' '^$' 1 1 true ''
-  run_hook_parallel jobB '.*' '^$' 1 1 false ''
+  run_hook_parallel jobA '.*' '^$' 1 1 1 "" true ''
+  run_hook_parallel jobB '.*' '^$' 1 1 1 "" false ''
   nixhooks_wait_parallel
   [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
@@ -197,7 +259,7 @@ EOF
 @test "nixhooks_wait_parallel does not clear a pre-existing NIXHOOKS_FAILED when every job succeeds" {
   NIXHOOKS_FAILED=1
   NIXHOOKS_FILES=()
-  run_hook_parallel jobA '.*' '^$' 1 1 true ''
+  run_hook_parallel jobA '.*' '^$' 1 1 1 "" true ''
   nixhooks_wait_parallel
   [ "$NIXHOOKS_FAILED" -eq 1 ]
 }
@@ -220,8 +282,8 @@ EOF
 
   local wait_output="$TEST_REPO/.wait-output"
   NIXHOOKS_FILES=()
-  run_hook_parallel slowjob '.*' '^$' 1 1 "$slow" ''
-  run_hook_parallel fastjob '.*' '^$' 1 1 "$fast" ''
+  run_hook_parallel slowjob '.*' '^$' 1 1 1 "" "$slow" ''
+  run_hook_parallel fastjob '.*' '^$' 1 1 1 "" "$fast" ''
   nixhooks_wait_parallel >"$wait_output" 2>&1
 
   run cat "$wait_output"
@@ -230,7 +292,7 @@ EOF
 
 @test "run_hook_parallel honors the same files/exclude matching as run_hook" {
   NIXHOOKS_FILES=("a.sh" "vendor/b.sh")
-  run_hook_parallel myhook '\.sh$' '^vendor/' 1 0 "$RECORDER" ''
+  run_hook_parallel myhook '\.sh$' '^vendor/' 1 0 1 "" "$RECORDER" ''
   nixhooks_wait_parallel
   run cat "$RECORD_FILE"
   [[ "$output" == *"a.sh"* ]]
@@ -248,8 +310,8 @@ EOF
     set -euo pipefail
     source "'"$NIXHOOKS_LIB"'/hooks-runtime.sh"
     NIXHOOKS_FILES=("a.sh")
-    run_hook first "\.sh\$" "^\$" 1 0 false "" || true
-    run_hook second "\.sh\$" "^\$" 1 0 true "" || true
+    run_hook first "\.sh\$" "^\$" 1 0 1 "" false "" || true
+    run_hook second "\.sh\$" "^\$" 1 0 1 "" true "" || true
     nixhooks_summary
   '
   [ "$status" -eq 1 ]
@@ -269,13 +331,13 @@ EOF
   [ "$NIXHOOKS_MATCH_FILE" = "$first" ]
   [ "$(find "$NIXHOOKS_MATCH_CACHE_DIR" -type f | wc -l)" -eq 2 ]
 
-  run_hook myhook '\.sh$' '^vendor/' 1 0 "$RECORDER" ''
+  run_hook myhook '\.sh$' '^vendor/' 1 0 1 "" "$RECORDER" ''
   [ "$(cat "$RECORD_FILE")" = "a.sh" ]
 }
 
 @test "the match cache keeps filenames with spaces and newlines intact" {
   NIXHOOKS_FILES=("a b.sh" $'c\nd.sh' "e.txt")
-  run_hook myhook '\.sh$' '^$' 1 0 "$RECORDER" ''
+  run_hook myhook '\.sh$' '^$' 1 0 1 "" "$RECORDER" ''
   [ "$(cat "$RECORD_FILE")" = $'a b.sh\nc\nd.sh' ]
 }
 

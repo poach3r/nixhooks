@@ -74,15 +74,37 @@ nixhooks_precompute_matches() {
 	nixhooks_match_cache_file "$1" "$2"
 }
 
-# Args: name files_regex exclude_regex pass_filenames(0|1) always_run(0|1) entry path_prefix [extra_args...]
+# For `script` hooks: prints the store binary $1 if present, else $2's path
+# on PATH. Fails with 127 if neither exists.
+nixhooks_tool() {
+	if [[ -x "$1" ]]; then
+		printf '%s\n' "$1"
+	elif ! command -v -- "$2"; then
+		echo "nixhooks: $2 not found" >&2
+		return 127
+	fi
+}
+
+# Reports a failed hook. Only a required hook sets NIXHOOKS_FAILED and
+# returns nonzero.
+_nixhooks_hook_failed() {
+	local name="$1" required="$2" reason="$3"
+	if [[ "$required" == 1 ]]; then
+		echo "nixhooks: FAIL  $name${reason:+ ($reason)}"
+		NIXHOOKS_FAILED=1
+		return 1
+	fi
+	echo "nixhooks: WARN  $name (${reason:-failed}, not required)"
+}
+
+# Args: name files_regex exclude_regex pass_filenames(0|1) always_run(0|1) required(0|1) fallback entry path_prefix [extra_args...]
+# fallback (possibly empty) is looked up on PATH when entry can't be found.
 # path_prefix (possibly empty) is prepended to PATH so entry can find sibling
 # binaries it dispatches to internally. Matches against $NIXHOOKS_FILES
 # populated by the caller before invocation
 run_hook() {
-	local name="$1" files_re="$2" exclude_re="$3" pass_filenames="$4" always_run="$5" entry="$6" path_prefix="$7"
-	shift 7
-	# "$@", not a copied array: empty "$@" is safe under set -u on bash < 4.4
-	local cmd=("$entry" "$@")
+	local name="$1" files_re="$2" exclude_re="$3" pass_filenames="$4" always_run="$5" required="$6" fallback="$7" entry="$8" path_prefix="$9"
+	shift 9
 
 	if should_skip "$name"; then
 		echo "nixhooks: skip  $name (SKIP)"
@@ -101,7 +123,17 @@ run_hook() {
 		fi
 	fi
 
-	echo "nixhooks: run   $name"
+	if command -v -- "$entry" >/dev/null; then
+		echo "nixhooks: run   $name"
+	elif [[ -n "$fallback" ]] && entry="$(command -v -- "$fallback")"; then
+		echo "nixhooks: run   $name (PATH: $entry)"
+	else
+		_nixhooks_hook_failed "$name" "$required" "${fallback:-${entry##*/}} not found"
+		return
+	fi
+
+	# "$@", not a copied array: empty "$@" is safe under set -u on bash < 4.4
+	local cmd=("$entry" "$@")
 	if [[ "$pass_filenames" == 1 && "$always_run" != 1 ]]; then
 		cmd+=("${matched[@]}")
 	fi
@@ -110,9 +142,8 @@ run_hook() {
 	[[ -n "$path_prefix" ]] && run_path="$path_prefix:$PATH"
 
 	if ! PATH="$run_path" "${cmd[@]}"; then
-		echo "nixhooks: FAIL  $name"
-		NIXHOOKS_FAILED=1
-		return 1
+		_nixhooks_hook_failed "$name" "$required" ""
+		return
 	fi
 	return 0
 }

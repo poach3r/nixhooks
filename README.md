@@ -132,7 +132,7 @@ your regular flake outputs. Each system's attrset may also carry its own
 ```nix
 hooks.<name> = {
   enable = true;                     # default true; set false to disable without deleting the entry
-  entry = "/nix/store/.../bin/tool"; # required: the command to run
+  entry = "/nix/store/.../bin/tool"; # the command to run, exclusive with script
   args = [ ];                        # extra args passed before matched filenames
   files = ".*";                      # ERE regex (bash [[ =~ ]]) tested against each candidate path
   exclude = "^$";                    # ERE regex; "^$" (default) excludes nothing
@@ -141,14 +141,38 @@ hooks.<name> = {
   always_run = false;                # run once with no file filtering/passing 
   path = [ ];                        # packages whose bin/ dirs are prepended to PATH for entry
   serial = true;                     # if false this hook will be run in parallel; see "Parallel execution" below
+  required = true;                   # if false a failing hook only warns instead of blocking the git action
+  fallback = "tool";                 # defaults to entry's filename, looked up on PATH when entry isn't found
+  script = null;                     # bash body run in place of entry; see below
 };
 ```
 
 `<name>` must match `[A-Za-z0-9_.-]+`
 
+A hook fails if `entry` exits nonzero, or if neither `entry` nor `fallback`
+can be found. A failing `required` hook blocks the commit/push; any other
+hook just prints a warning. 
+
 `path` is for tools that internally dispatch to a sibling binary via `PATH`
 (e.g. `cargo` finding `cargo-clippy`) -- `entry` itself is always invoked by
 absolute path regardless of `path`.
+
+`script` is for hooks that need a bit of shell around their tool. It's
+embedded in the generated hook script and run like a standalone bash script
+with `args` and the matched files as `"$@"`. You may find tools with
+`nixhooks_tool`, which prints the store binary if it exists and otherwise looks
+the name up on `PATH`:
+
+```nix
+gofmt = {
+  script = ''
+    gofmt="$(nixhooks_tool ${pkgs.go}/bin/gofmt gofmt)" || exit
+    unformatted="$("$gofmt" -l "$@")" || exit
+    [ -z "$unformatted" ] || { echo "$unformatted"; exit 1; }
+  '';
+  files = "\\.go$";
+};
+```
 
 A `commit-msg`-staged hook receives the path to the temporary file
 containing the commit message as its sole file. `files`/`exclude`/
@@ -191,6 +215,34 @@ entire batch finishes in the declared order.
 Only mark a hook `serial = false` if it doesn't mutate the files it's
 matched against, or if it's provably safe to race against every other
 `serial = false` hook in the same stage. 
+
+## Non-Nix contributors
+The hooks `install-hooks` sets up live in the Nix store, so contributors
+without Nix can't use them. Enabling `settings.portable` generates a copy
+you commit to the repo instead:
+
+```nix
+nixhooks.mkHooks {
+  hooks = { /* ... */ };
+  settings.portable = {
+    enable = true;
+    dir = ".nixhooks"; # relative to the repo root
+  };
+}
+```
+
+```console
+$ nix run .#gen-portable-hooks
+gen-portable-hooks: wrote .nixhooks/commit-msg
+gen-portable-hooks: wrote .nixhooks/pre-commit
+gen-portable-hooks: wrote .nixhooks/pre-push
+```
+
+Contributors without Nix then enable them with:
+
+```console
+$ git config core.hooksPath .nixhooks
+```
 
 ## CI/CD
 nixhooks can also autogenerate CI workflows based on your selected hooks.

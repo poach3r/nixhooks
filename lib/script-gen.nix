@@ -1,4 +1,13 @@
 {lib}: let
+  scriptFn = hook: "nixhooks_hook_${hook.name}";
+
+  # a subshell function, with options reset so it runs like a standalone script
+  scriptDef = hook: ''
+    ${scriptFn hook}() (
+    set +e +u +o pipefail
+    ${hook.script}
+    )'';
+
   mkArgs = hook: let
     args =
       [
@@ -15,7 +24,21 @@
           then "1"
           else "0"
         )
-        hook.entry
+        (
+          if hook.required
+          then "1"
+          else "0"
+        )
+        (
+          if hook.fallback == null
+          then ""
+          else hook.fallback
+        )
+        (
+          if hook.script != null
+          then scriptFn hook
+          else hook.entry
+        )
         (lib.makeBinPath hook.path)
       ]
       ++ hook.args;
@@ -47,7 +70,8 @@
     parallelHooks = builtins.filter (h: h.parallel) ordered;
     serialHooks = builtins.filter (h: !h.parallel) ordered;
     lines =
-      genPrecomputeCalls ordered
+      map scriptDef (builtins.filter (h: h.script != null) ordered)
+      ++ genPrecomputeCalls ordered
       ++ map parallelCall parallelHooks
       ++ lib.optional (parallelHooks != []) "  nixhooks_wait_parallel"
       ++ map serialCall serialHooks;

@@ -141,15 +141,16 @@ in {
     serial = false;
   };
 
-  xmllint-fmt = let
+  xmllint-fmt = mkPreset {
     # xmllint --format always prepends an <?xml ...?> declaration to its
     # output, even when the input has none
-    check = pkgs.writeShellScriptBin "xmllint-fmt-check" ''
+    script = ''
+      xmllint="$(nixhooks_tool ${pkgs.libxml2}/bin/xmllint xmllint)" || exit
       unformatted=()
       for f in "$@"; do
         if ! diff -q \
-          <(sed '1{/^<?xml /d}' "$f") \
-          <(${pkgs.libxml2}/bin/xmllint --format "$f" | sed '1{/^<?xml /d}') \
+          <(sed '1{/^<?xml /d;}' "$f") \
+          <("$xmllint" --format "$f" | sed '1{/^<?xml /d;}') \
           >/dev/null; then
           unformatted+=("$f")
         fi
@@ -159,12 +160,9 @@ in {
         exit 1
       fi
     '';
-  in
-    mkPreset {
-      entry = "${check}/bin/xmllint-fmt-check";
-      files = "\\.xml$";
-      serial = false;
-    };
+    files = "\\.xml$";
+    serial = false;
+  };
 
   prettier = mkPreset {
     entry = "${pkgs.prettier}/bin/prettier";
@@ -197,20 +195,18 @@ in {
     serial = false;
   };
 
-  gofmt = let
-    check = pkgs.writeShellScriptBin "gofmt-check" ''
-      unformatted="$(${pkgs.go}/bin/gofmt -l "$@")"
+  gofmt = mkPreset {
+    script = ''
+      gofmt="$(nixhooks_tool ${pkgs.go}/bin/gofmt gofmt)" || exit
+      unformatted="$("$gofmt" -l "$@")" || exit # nonzero on parse errors
       if [ -n "$unformatted" ]; then
         echo "$unformatted"
         exit 1
       fi
     '';
-  in
-    mkPreset {
-      entry = "${check}/bin/gofmt-check";
-      files = "\\.go$";
-      serial = false;
-    };
+    files = "\\.go$";
+    serial = false;
+  };
 
   govet = mkPreset {
     entry = "${pkgs.go}/bin/go";
@@ -228,20 +224,18 @@ in {
     serial = false;
   };
 
-  scalafmt = let
+  scalafmt = mkPreset {
     # scalafmt --check exits 0 on invalid scala so we need to wrap it to exit 1
-    check = pkgs.writeShellScriptBin "scalafmt-check" ''
-      out="$(${pkgs.scalafmt}/bin/scalafmt --check "$@" 2>&1)"
+    script = ''
+      scalafmt="$(nixhooks_tool ${pkgs.scalafmt}/bin/scalafmt scalafmt)" || exit
+      out="$("$scalafmt" --check "$@" 2>&1)"
       status=$?
       if [ "$status" -ne 0 ] || printf '%s\n' "$out" | grep -q 'error:'; then
         printf '%s\n' "$out"
         exit 1
       fi
     '';
-  in
-    mkPreset {
-      entry = "${check}/bin/scalafmt-check";
-      files = "\\.scala$";
-      serial = false;
-    };
+    files = "\\.scala$";
+    serial = false;
+  };
 }

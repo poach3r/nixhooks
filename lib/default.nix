@@ -29,24 +29,46 @@
     }
   '';
 
-  mkStageScript = name: driver: calls:
-    pkgs.writeShellScriptBin name ''
-      ${marker}
-      set -euo pipefail
-      ${runtimeLib}
-      ${genFunction calls}
-      ${driver}
-    '';
+  stageBody = driver: calls: ''
+    ${marker}
+    set -euo pipefail
+    ${runtimeLib}
+    ${genFunction calls}
+    ${driver}
+  '';
+
+  mkStageScript = name: driver: calls: pkgs.writeShellScriptBin name (stageBody driver calls);
+
+  # same script with a non-Nix shebang, for committing into the repo
+  mkPortableScript = name: driver: calls:
+    pkgs.writeTextFile {
+      name = "${name}-portable";
+      executable = true;
+      text = ''
+        #!/usr/bin/env bash
+        ${stageBody driver calls}
+      '';
+    };
 
   mkHooks = {
     hooks, # attrset of name -> hook config, see lib/hook-spec.nix for fields.
-    settings ? {}, # optional {tangled, githubActions, parallel}; see below.
+    settings ? {}, # optional {tangled, githubActions, parallel, portable}; see below.
   }: let
     tangled = settings.tangled or {}; # optional Tangled pipeline config, see lib/tangled-gen.nix for fields.
     githubActions = settings.githubActions or {}; # optional GitHub Actions workflow config, see lib/github-actions-gen.nix for fields.
     parallel = settings.parallel or false; # optionally determines if hooks are ran in parallel
+    # optional hook scripts committed to the repo for non-Nix users
+    portable =
+      {
+        enable = false;
+        dir = ".nixhooks"; # relative to the repo root
+      }
+      // settings.portable or {};
   in
-    assert lib.assertMsg (builtins.isBool parallel) "nixhooks: settings.parallel must be a bool"; let
+    assert lib.assertMsg (builtins.isBool parallel) "nixhooks: settings.parallel must be a bool";
+    assert lib.assertMsg (builtins.isBool portable.enable) "nixhooks: settings.portable.enable must be a bool";
+    assert lib.assertMsg (builtins.isString portable.dir && portable.dir != "" && !lib.hasPrefix "/" portable.dir)
+    "nixhooks: settings.portable.dir must be a non-empty relative path"; let
       normalized = hookSpec.normalizeHooks hooks;
       # resolve the top-level switch + per-hook escape hatch into one
       # effective flag before codegen so lib/script-gen.nix only ever
@@ -55,16 +77,65 @@
       tangledCfg = tangledGen.normalizeTangled tangled;
       githubActionsCfg = githubActionsGen.normalizeGithubActions githubActions;
 
-      preCommitHook = mkStageScript "pre-commit-hook" driverPreCommit (
-        scriptGen.genStageCalls "pre-commit" scheduled
-      );
-      prePushHook = mkStageScript "pre-push-hook" driverPrePush (
-        scriptGen.genStageCalls "pre-push" scheduled
-      );
-      commitMsgHook = mkStageScript "commit-msg-hook" driverCommitMsg (
-        scriptGen.genStageCalls "commit-msg" scheduled
-      );
+      stageDrivers = {
+        pre-commit = driverPreCommit;
+        pre-push = driverPrePush;
+        commit-msg = driverCommitMsg;
+      };
+      stageCalls = lib.mapAttrs (stage: _: scriptGen.genStageCalls stage scheduled) stageDrivers;
+
+      preCommitHook = mkStageScript "pre-commit-hook" driverPreCommit stageCalls.pre-commit;
+      prePushHook = mkStageScript "pre-push-hook" driverPrePush stageCalls.pre-push;
+      commitMsgHook = mkStageScript "commit-msg-hook" driverCommitMsg stageCalls.commit-msg;
       runHooks = mkStageScript "run-hooks" driverRunHooks (scriptGen.genAllCalls scheduled);
+
+      portableScripts = lib.mapAttrs (stage: driver: mkPortableScript stage driver stageCalls.${stage}) stageDrivers;
+
+      # runs body once per stage with $stage, $src (generated) and $dest set
+      portableLoop = body:
+        lib.concatStrings (lib.mapAttrsToList (stage: src: ''
+            stage=${stage} src=${src} dest="$dir/${stage}"
+            ${body}
+          '')
+          portableScripts);
+
+      portablePrelude = name: ''
+        set -euo pipefail
+
+        if ! git_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+          echo "${name}: not inside a git repository" >&2
+          exit 1
+        fi
+        dir="$git_root/"${lib.escapeShellArg portable.dir}
+      '';
+
+      genPortableHooks = pkgs.writeShellScriptBin "gen-portable-hooks" ''
+        ${portablePrelude "gen-portable-hooks"}
+        ${portableLoop ''
+          if [[ -e "$dest" ]] && ! grep -q ${lib.escapeShellArg marker} "$dest" 2>/dev/null; then
+            echo "gen-portable-hooks: $dest already exists and is not managed by nixhooks, refusing to overwrite" >&2
+            exit 1
+          fi
+        ''}
+        mkdir -p "$dir"
+        ${portableLoop ''
+          install -m 0755 "$src" "$dest"
+          echo "gen-portable-hooks: wrote $dest"
+        ''}
+      '';
+
+      checkPortableHooks = pkgs.writeShellScriptBin "check-portable-hooks" ''
+        ${portablePrelude "check-portable-hooks"}
+        stale=""
+        ${portableLoop ''
+          cmp -s "$src" "$dest" || stale="$stale $stage"
+        ''}
+        if [[ -n "$stale" ]]; then
+          echo "nixhooks: portable hooks in "${lib.escapeShellArg portable.dir}" are out of date:$stale" >&2
+          echo "nixhooks: regenerate with ${genPortableHooks}/bin/gen-portable-hooks" >&2
+          exit 1
+        fi
+      '';
 
       installHooks = pkgs.writeShellScriptBin "install-hooks" ''
         set -euo pipefail
@@ -156,10 +227,18 @@
         // lib.optionalAttrs githubActionsCfg.enable {
           github-actions-workflow = githubActionsWorkflow;
           gen-github-actions-workflow = genGithubActionsWorkflow;
+        }
+        // lib.optionalAttrs portable.enable {
+          gen-portable-hooks = genPortableHooks;
+          check-portable-hooks = checkPortableHooks;
         };
-      shellHook = ''
-        ${installHooks}/bin/install-hooks
-      '';
+      shellHook =
+        ''
+          ${installHooks}/bin/install-hooks
+        ''
+        + lib.optionalString portable.enable ''
+          ${checkPortableHooks}/bin/check-portable-hooks || true
+        '';
       # deprecated: derivations used to sit at the top level of the result.
       removedTopLevel = lib.mapAttrs (name: _:
         throw "nixhooks: `hooks.${name}` has been removed; use `hooks.packages.${name}` instead")
