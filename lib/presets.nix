@@ -188,7 +188,7 @@ in {
     # cargo dispatches `clippy` to `cargo-clippy` via PATH
     entry = "${pkgs.cargo}/bin/cargo";
     args = ["clippy" "--" "-D" "warnings"];
-    path = [pkgs.clippy];
+    path = [pkgs.clippy pkgs.stdenv.cc];
     files = "\\.rs$";
     pass_filenames = false;
     always_run = true;
