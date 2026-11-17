@@ -9,7 +9,7 @@ in {
 
   alejandra = mkPreset {
     entry = "${pkgs.alejandra}/bin/alejandra";
-    args = ["check" "--exclude" "npins/**"];
+    args = ["--check" "--exclude" "npins/**"];
     files = "\\.nix$";
     serial = false;
   };
